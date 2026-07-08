@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, status
 import ee
 from dotenv import load_dotenv
 import os
@@ -7,7 +7,6 @@ load_dotenv()
 
 app = FastAPI()
 
-#GEE stuff
 SERVICE_ACCOUNT_EMAIL = os.getenv("SERVICE_ACCOUNT_EMAIL")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
 PROJECT_ID = os.getenv("PROJECT_ID")
@@ -21,28 +20,55 @@ except Exception as e:
 
 
 @app.get("/api/get-satellite-patch")
-def get_satellite_patch():
-    #uses Rondonia, Brazil due to GEE rate/size limits
+def get_satellite_patch(response: Response):
+    #Rondonia, Brazil
     coords = [-62.05, -10.05, -62.00, -10.00]
     roi = ee.Geometry.Rectangle(coords)
 
-    # Cloud masking
     def mask_clouds(img):
         qa = img.select('QA60')
         mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
         return img.updateMask(mask).divide(10000)
 
-    # Fetch and process the dataset
-    dataset = (ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
+    def get_ndvi_composite(start_date, end_date):
+        img = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                .filterBounds(roi)
-               .filterDate('2023-06-01', '2023-08-31')
+               .filterDate(start_date, end_date)
                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-               .map(mask_clouds))
+               .map(mask_clouds)
+               .median()
+               .clip(roi))
 
-    image_after = dataset.median().clip(roi).select(['B4', 'B3', 'B2', 'B8'])
+        #calc NDVI
+        ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI')
+        return img.addBands(ndvi)
+
+    #Fetch Before (baseline) and After (current) composites
+    image_before = get_ndvi_composite('2023-01-01', '2023-03-31')
+    image_after = get_ndvi_composite('2023-06-01', '2023-08-31')
+
+    # A positive delta means vegetation was lost (Before was greener than After)
+    ndvi_delta = image_before.select('NDVI').subtract(image_after.select('NDVI'))
+
+    max_delta = ndvi_delta.reduceRegion(
+        reducer=ee.Reducer.max(),
+        geometry=roi,
+        scale=10,
+        maxPixels=1e6
+    ).get('NDVI').getInfo()  #pulls the raw float number from Google cloud
+
+    NDVI_THRESHOLD = 0.25
+
+    if max_delta is None or max_delta < NDVI_THRESHOLD:
+        #no significant forest loss detected
+        response.status_code = status.HTTP_204_NO_CONTENT
+        return {"message": f"No significant deforestation detected. Max NDVI drop: {max_delta}"}
+
+
+    ai_ready_image = image_after.select(['B4', 'B3', 'B2', 'B8'])
 
     request_payload = {
-        'expression': image_after,
+        'expression': ai_ready_image,
         'fileFormat': 'GEO_TIFF',
         'grid': {
             'dimensions': {'width': 512, 'height': 512},
@@ -58,8 +84,7 @@ def get_satellite_patch():
         }
     }
 
-    #Get raw GeoTIFF bytes
     tiff_bytes = ee.data.computePixels(request_payload)
 
-    #Return the bytes directly as a downloadable/readable TIFF file
+    #back to server
     return Response(content=tiff_bytes, media_type="image/tiff")
