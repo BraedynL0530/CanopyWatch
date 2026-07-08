@@ -33,7 +33,7 @@ def get_satellite_patch():
         return img.updateMask(mask).divide(10000)
 
     # Fetch and process the dataset
-    dataset = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    dataset = (ee.ImageCollection('COPERNICUS/S2_HARMONIZED')
                .filterBounds(roi)
                .filterDate('2023-06-01', '2023-08-31')
                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
