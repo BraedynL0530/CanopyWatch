@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { satelliteData } from "./api"; // Probally gonna switch to raw fast api endpoint
+import { satelliteData } from "./api.js"; // Probally gonna switch to raw fast api endpoint
 import "../css/SatelliteDashboard.css";
 
 export default function SatelliteDashboard() {

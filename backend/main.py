@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Response, status
+from backend.legality_router import router as legality_router
 import ee
 from dotenv import load_dotenv
 import os
@@ -6,7 +7,7 @@ import os
 load_dotenv()
 
 app = FastAPI()
-
+app.include_router(legality_router)
 SERVICE_ACCOUNT_EMAIL = os.getenv("SERVICE_ACCOUNT_EMAIL")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
 PROJECT_ID = os.getenv("PROJECT_ID")
@@ -88,3 +89,5 @@ def get_satellite_patch(response: Response):
 
     #back to server
     return Response(content=tiff_bytes, media_type="image/tiff")
+
+
