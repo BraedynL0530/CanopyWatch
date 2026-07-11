@@ -30,96 +30,37 @@ Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
 
 
-def get_permit_status(lat, long, ndvi_event_date): #yippy
+def query_sinaflor_records(lat, lon):
     buffer = 0.008
-    lat_min, lat_max = lat - buffer, lat + buffer
-    long_min, long_max = long - buffer, long + buffer
-
-
-    sql_query = f"""
-    SELECT SITUACAO_AUTORIZACAO, DT_EMISSAO, DT_VALIDADE 
-    FROM "{SINAFLOR_RESOURCE_ID}" 
-    WHERE LATITUDE BETWEEN {lat_min} AND {lat_max} 
-      AND LONGITUDE BETWEEN {long_min} AND {long_max}
-    """
-
+    sql = f"""SELECT SITUACAO_AUTORIZACAO, DT_EMISSAO, DT_VALIDADE 
+              FROM "{SINAFLOR_RESOURCE_ID}" 
+              WHERE LATITUDE BETWEEN {lat - buffer} AND {lat + buffer} 
+              AND LONGITUDE BETWEEN {lon - buffer} AND {lon + buffer}"""
     try:
-        response = requests.get(Permit_Api, params={'sql': sql_query}, timeout=10)
+        resp = requests.get(SINAFLOR_RESOURCE_ID, params={'sql': sql}, timeout=10)
+        return resp.json().get('result', {}).get('records', []) if resp.status_code == 200 else []
+    except:
+        return []
 
-        if response.status_code != 200:
-            return "UNKNOWN_SERVER_ERROR"
 
-        records = response.json().get('result', {}).get('records', [])
+def get_permit_status(records, event_date_str):
+    if not records: return "Illegal Logging (Presumed)"
 
-    except requests.exceptions.RequestException:
-        return "UNKNOWN_CONNECTION_TIMEOUT"
-
-    #no records = illegal(likely)
-    if not records:
-        return "no record found, presumed illegal"
-
-    event_dt = datetime.strptime(ndvi_event_date, "%Y-%m-%d")
-
-    for permit in records:
-        status = str(permit.get("SITUACAO_AUTORIZACAO", "")).strip().upper()
-        raw_start = str(permit.get("DT_EMISSAO", "")).strip()
-        raw_end = str(permit.get("DT_VALIDADE", "")).strip()
-
-        if status in ["EMITIDA", "VALIDA", "HOMOLOGADA"]:
-            try:
-                start_dt = datetime.strptime(raw_start, "%d/%m/%Y")
-                end_dt = datetime.strptime(raw_end, "%d/%m/%Y")
-
-                # If the NDVI change happened while the permit was active, it is legal(porbally)
-                if start_dt <= event_dt <= end_dt:
-                    return "LEGAL"
-            except ValueError:
-
-                continue
-    return "ILLEGAL"
+    event_dt = datetime.strptime(event_date_str, "%Y-%m-%d")
+    for p in records:
+        status = str(p.get("SITUACAO_AUTORIZACAO", "")).upper()
+        try:
+            start = datetime.strptime(p.get("DT_EMISSAO"), "%d/%m/%Y")
+            end = datetime.strptime(p.get("DT_VALIDADE"), "%d/%m/%Y")
+            if status in ["EMITIDA", "VALIDA"] and start <= event_dt <= end:
+                return "Legal"
+        except:
+            continue
+    return "Illegal Logging (Presumed)"
 
 def call_llm():
     pass
-date = datetime.today()
-def run_agent_loop(ai_results, img_path):
-    print("[System] ML Model finished. Initializing Verification Agent...")
-
-    lat, lon = ai_results["lat"], ai_results["lon"]
-    event_date = date
-    results = "Unknown"
-
-    messages = [
-        {"role": "system", "content": SYS_PROMPT},
-        {"role": "user",
-         "content": f"NEW ALERT: Deforestation detected with {ai_results['confidence'] * 100}% confidence at lat: {lat}, lon: {lon}. Event date: {event_date}."}
-    ]
-
-    max_turns = 3
-    for turn in range(max_turns):
-        llm_response = call_llm(messages)
-        messages.append({"role": "assistant", "content": llm_response})
-
-        try:
-            command = json.loads(llm_response)
-        except json.JSONDecodeError:
-            print("ai slop didnt return json right")
-            break
-
-        action = command.get("action")
-
-        if action == "SEARCH":
-            results = get_permit_status(command.get("lat"), command.get("lon"), event_date)
-            observation_text = f"OBSERVATION: {json.dumps(results)}"
-            messages.append({"role": "user", "content": observation_text})
-
-        elif action == "PUSH":
-            push_to_dashboard(results,"filler for ml",img_path)
-    return
 
 
-def push_to_dashboard(permit_status,ai_results,img_path):
+def run_agent_loop(ai_response):
     pass
-
-permit_status = get_permit_status(lat=-67.21, long=-41.00, ndvi_event_date="2026-07-09")
-
-print(f"Deforestation Status: {permit_status}")
