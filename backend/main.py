@@ -3,6 +3,7 @@ from backend.legality_router import router as legality_router
 import ee
 from dotenv import load_dotenv
 import os
+from ai.notebooks.ML_task import ML_output as ai_response
 
 load_dotenv()
 
@@ -91,3 +92,7 @@ def get_satellite_patch(response: Response):
     return Response(content=tiff_bytes, media_type="image/tiff")
 
 
+@app.get("api/ai-results")
+def idk_yet_stop_bullying_me_IDE():
+    ai_response.delay(tiff_path)
+    pass

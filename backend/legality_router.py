@@ -10,7 +10,7 @@ router = APIRouter(
 @router.get("/verify-patch")
 def get_legality(lat: float, lon: float, date: str):
 
-    # Create the mock ML payload from the incoming query parameters
+    # Create the mock ML payload from the incoming query parameters use real later
     ai_results = {
         "lat": lat,
         "lon": lon,

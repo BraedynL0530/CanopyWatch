@@ -3,9 +3,8 @@ from datetime import datetime
 import requests
 from dotenv import load_dotenv
 import os
-from fastapi import FastAPI
 load_dotenv()
-app = FastAPI()
+
 SYS_PROMPT = """You are the CanopyGuard Legal Verification Agent. 
 Your job is to receive deforestation alerts, check their coordinates against Brazilian environmental registries (Sinaflor/IBAMA and SICAR), and determine the legality of the logging before pushing a case to the dashboard.
 
@@ -55,9 +54,9 @@ def get_permit_status(lat, long, ndvi_event_date): #yippy
     except requests.exceptions.RequestException:
         return "UNKNOWN_CONNECTION_TIMEOUT"
 
-    #no records = illegal
+    #no records = illegal(likely)
     if not records:
-        return "ILLEGAL"
+        return "no record found, presumed illegal"
 
     event_dt = datetime.strptime(ndvi_event_date, "%Y-%m-%d")
 
@@ -66,13 +65,12 @@ def get_permit_status(lat, long, ndvi_event_date): #yippy
         raw_start = str(permit.get("DT_EMISSAO", "")).strip()
         raw_end = str(permit.get("DT_VALIDADE", "")).strip()
 
-        # If it's explicitly valid, verify the dates
         if status in ["EMITIDA", "VALIDA", "HOMOLOGADA"]:
             try:
                 start_dt = datetime.strptime(raw_start, "%d/%m/%Y")
                 end_dt = datetime.strptime(raw_end, "%d/%m/%Y")
 
-                # If the NDVI change happened while the permit was active, it is legal
+                # If the NDVI change happened while the permit was active, it is legal(porbally)
                 if start_dt <= event_dt <= end_dt:
                     return "LEGAL"
             except ValueError:
@@ -82,12 +80,12 @@ def get_permit_status(lat, long, ndvi_event_date): #yippy
 
 def call_llm():
     pass
-
-def run_agent_loop(ai_results, img_path): #probally gonna need to change to matdch call llm
+date = datetime.today()
+def run_agent_loop(ai_results, img_path):
     print("[System] ML Model finished. Initializing Verification Agent...")
 
     lat, lon = ai_results["lat"], ai_results["lon"]
-    event_date = ai_results.get("date", "2025-07-15")
+    event_date = date
     results = "Unknown"
 
     messages = [
@@ -110,12 +108,14 @@ def run_agent_loop(ai_results, img_path): #probally gonna need to change to matd
         action = command.get("action")
 
         if action == "SEARCH":
-            results = get_permit_status(command.get("lat"), command.get("lon"), command.get("date"))
+            results = get_permit_status(command.get("lat"), command.get("lon"), event_date)
             observation_text = f"OBSERVATION: {json.dumps(results)}"
             messages.append({"role": "user", "content": observation_text})
 
         elif action == "PUSH":
             push_to_dashboard(results,"filler for ml",img_path)
+    return
+
 
 def push_to_dashboard(permit_status,ai_results,img_path):
     pass
