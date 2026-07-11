@@ -4,11 +4,12 @@ import ee
 from celery import Celery
 import os
 from dotenv import load_dotenv
-from backend.ai.agents import run_agent_loop
+from backend.ai.agents.legal_agent import run_agent_loop
 import torch
 load_dotenv()
 
-app = Celery('tasks', broker='redis://localhost:6379/0') #change on prod maybe
+app = Celery('tasks')
+app.config_from_object("backend.celery_config")
 
 app.conf.update(
     imports=["tasks"],
