@@ -25,6 +25,7 @@ RULES:
 Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
 
+# im thinking of adding some secondary apis just for more accuracy! if i do add here :3
 
 def query_sinaflor_records(lat, lon):
     buffer = 0.008
