@@ -153,3 +153,4 @@ def scan_region(region): #region later after i test
         "image": path,
         "ndvi_drop": max_delta
     }
+

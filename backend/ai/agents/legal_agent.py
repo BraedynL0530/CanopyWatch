@@ -17,6 +17,7 @@ OPERATE IN THIS LOOP:
 RULES:
 - You must REASON at least once before PUSH.
 - status must be one of: "Illegal Logging (Presumed)", "Needs Permit", "Legal", or "Unknown".
+- confidence refers to a number between 0 and 1, where 1 is 100% confidence that deforestation occured.
 - Incorporate specific data points into your reasoning (e.g., 'Confidence: 0.96', 'NDVI delta: 0.3', 'Permit status: No records found').
 - DO NOT output conversational text. ONLY JSON.
 """
