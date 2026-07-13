@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 from backend.ai.agents.legal_agent import run_agent_loop
 import torch
+import gc
 load_dotenv()
 
 app = Celery('tasks')
@@ -36,6 +37,16 @@ def init_earth_engine():
             raise e
 
 
+
+
+def load_model():
+    global model
+    if model is  None:
+        model_path = os.getenv("MODEL_PATH")
+        model = torch.load(model_path)
+        model.load_state_dict(torch.load("canopywatch_v1.pth", map_location="cpu"))
+        model.eval()
+    return model
 @app.task
 def ML_output(tiff_path):
     latitude = "temp"
@@ -154,3 +165,4 @@ def scan_region(region): #region later after i test
         "ndvi_drop": max_delta
     }
 
+#ok were gonna have some OOM issues on deployment, we gotta find a way to reduce gpu and ram memory, compute pixels is one of them and pytorch
