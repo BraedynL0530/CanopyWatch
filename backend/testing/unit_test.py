@@ -10,7 +10,3 @@ class Test_agent(unittest.TestCase):# make sure ai isnt an idiot and all other t
     assert get_permit_status(mock_records, "2024-01-01") == "Illegal Logging (Presumed)"
 
     #ai stuff once llm is hooked up below:
-
-class testApi(unittest.TestCase): # just make sure endpoints work and maybe measure latency? im not sure if you do that with unit test tho
-    pass
-

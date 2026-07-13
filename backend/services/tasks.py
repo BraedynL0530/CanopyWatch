@@ -1,12 +1,14 @@
 import os
 import uuid
 import ee
+import rasterio
 from celery import Celery
 import os
 from dotenv import load_dotenv
 from backend.ai.agents.legal_agent import run_agent_loop
 import torch
 import gc
+
 load_dotenv()
 
 app = Celery('tasks')
@@ -46,16 +48,44 @@ def load_model():
         model = torch.load(model_path)
         model.load_state_dict(torch.load("canopywatch_v1.pth", map_location="cpu"))
         model.eval()
+        pass
     return model
 @app.task
 def ML_output(tiff_path):
-    latitude = "temp"
-    longitute = "temp"
-    confidence= 123 # temp
-    ai_response = {"lat": latitude, "lon":longitute, "confidence":confidence}
-    run_agent_loop(ai_response) # may remove ts well see :3
-    return ai_response
+    try:
+        if os.path.exists(tiff_path):
+            with rasterio.open(tiff_path) as src:
+                img_array= src.read().astype('float32')
 
+            input_tensor = torch.from_numpy(img_array).unsqueeze(0)
+            del img_array
+
+            model = load_model()
+            with torch.no_grad():
+                output = model(input_tensor)
+                confidence = output.softmax(dim=1)[0][1].item()
+                print(f"Confidence: {confidence}")
+                pass
+            del input_tensor
+
+        latitude = "temp"
+        longitute = "temp"
+        ai_response = {"lat": latitude, "lon":longitute, "confidence":confidence}
+        run_agent_loop(ai_response)
+        return ai_response
+
+
+    finally:
+        if os.path.exists(tiff_path):
+            try:
+                os.remove(tiff_path)
+
+            except Exception as e:
+                print(f"Failed to delete artifact {tiff_path}: {e}")
+
+        gc.collect()
+
+#ToDO: refactor to use getDownloadURL  since im not doing realtime instead updates
 @app.task
 def scan_region(region): #region later after i test
     init_earth_engine()
