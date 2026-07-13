@@ -1,5 +1,7 @@
 import os
 import uuid
+from datetime import datetime, timedelta
+
 import ee
 import rasterio
 from celery import Celery
@@ -85,11 +87,12 @@ def ML_output(tiff_path):
 
         gc.collect()
 
-#ToDO: refactor to use getDownloadURL  since im not doing realtime instead updates
 @app.task
-def scan_region(region): #region later after i test
+def scan_region(regioncords, lookback_days=30): #region later after i test
     init_earth_engine()
-
+    end_date = datetime.utcnow()
+    start_date_after = end_date - timedelta(days=lookback_days)
+    start_date_before = start_date_after - timedelta(days=90)
 
     # Rondonia, Brazil
     coords = [-62.05, -10.05, -62.00, -10.00]
@@ -103,54 +106,55 @@ def scan_region(region): #region later after i test
         )
         return img.updateMask(mask).divide(10000)
 
-    def get_ndvi_composite(start_date, end_date):
-        img = (
-            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-            .filterBounds(roi)
-            .filterDate(start_date, end_date)
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
-            .map(mask_clouds)
-            .median()
-            .clip(roi)
-        )
+    def get_composite(start, end):
+        img = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+               .filterBounds(roi)
+               .filterDate(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d'))
+               .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+               .map(mask_clouds)
+               .median()
+               .clip(roi))
 
         ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI')
-        return img.addBands(ndvi)
+        evi = img.expression(
+            '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1.0))',
+            {
+                'NIR': img.select('B8'),
+                'RED': img.select('B4'),
+                'BLUE': img.select('B2')
+            }
+        ).rename('EVI')
 
-    image_before = get_ndvi_composite(
-        '2023-01-01',
-        '2023-03-31'
-    )
+        return img.addBands([ndvi, evi])
 
-    image_after = get_ndvi_composite(
-        '2023-06-01',
-        '2023-08-31'
-    )
+    image_before = get_composite(start_date_before, start_date_after) #yippe dynamic dates instead of old
+    image_after = get_composite(start_date_after, end_date)
 
-    ndvi_delta = (
-        image_before.select('NDVI')
-        .subtract(image_after.select('NDVI'))
-    )
 
-    max_delta = ndvi_delta.reduceRegion(
+    forest_mask = image_before.select('EVI').gte(0.6).And(image_before.select('EVI').lte(0.9)) #should ignore if its not a forest
+    ndvi_delta = (image_before.select('NDVI').subtract(image_after.select('NDVI')))
+    significant_loss = ndvi_delta.updateMask(forest_mask).gt(0.25) #max delta reskinned.
+
+    is_deforestation = significant_loss.reduceRegion(
         reducer=ee.Reducer.max(),
         geometry=roi,
-        scale=10,
+        scale=30,
         maxPixels=1e6
-    ).get('NDVI').getInfo()
+    ).get('NDVI')
 
-    NDVI_THRESHOLD = 0.25
-
-    if max_delta is None or max_delta < NDVI_THRESHOLD:
-        return {
-            "detected": False,
-            "reason": "No significant vegetation loss",
-            "ndvi_drop": max_delta
-        }
-
+    if is_deforestation.getInfo() is None or is_deforestation.getInfo() == 0:
+        return {"detected": False, "reason": "No significant forest canopy loss detected."}
 
     ai_ready_image = image_after.select(
         ['B4', 'B3', 'B2', 'B8']
+    )
+
+    frontend_before_img = image_before.select(
+
+    )
+
+    frontend_after_img = image_after.select(
+
     )
 
     request_payload = {
@@ -192,7 +196,7 @@ def scan_region(region): #region later after i test
     return {
         "detected": True,
         "image": path,
-        "ndvi_drop": max_delta
+        "ndvi_drop": ndvi_delta
     }
 
 #ok were gonna have some OOM issues on deployment, we gotta find a way to reduce gpu and ram memory, compute pixels is one of them and pytorch
