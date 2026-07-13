@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import ee
 import rasterio
+import requests
 from celery import Celery
 import os
 from dotenv import load_dotenv
@@ -59,38 +60,62 @@ def ML_output(tiff_path):
             with rasterio.open(tiff_path) as src:
                 img_array= src.read().astype('float32')
 
+            if img_array.max() > 255.0:
+                img_array = img_array / 10000.0
+            else:
+                img_array = img_array / 255.0
+
             input_tensor = torch.from_numpy(img_array).unsqueeze(0)
             del img_array
 
             model = load_model()
             with torch.no_grad():
                 output = model(input_tensor)
-                confidence = output.softmax(dim=1)[0][1].item()
-                print(f"Confidence: {confidence}")
-                pass
+                probabilities = torch.sigmoid(output).squeeze().cpu()
+                forest_pixels = probabilities[probabilities > 0.5]
+
+                if forest_pixels.numel() > 0:
+                    confidence = float(forest_pixels.mean().item())
+
+                else:
+                    confidence = float(probabilities.mean().item())
+
+                print(f"[ML Task] Inference completed. Forest Confidence: {confidence:.4f}")
             del input_tensor
 
-        latitude = "temp"
-        longitute = "temp"
-        ai_response = {"lat": latitude, "lon":longitute, "confidence":confidence}
-        run_agent_loop(ai_response)
-        return ai_response
+            # TODO: Retrieve actual coordinates
+            latitude = -10.02
+            longitude = -62.01
 
+            ai_response = {
+                "lat": latitude,
+                "lon": longitude,
+                "confidence": round(confidence, 4),
+                "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+            }
+
+            # Trigger your Agent verification brain
+            run_agent_loop(ai_response)
+            return ai_response
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise e
 
     finally:
         if os.path.exists(tiff_path):
             try:
                 os.remove(tiff_path)
-
             except Exception as e:
                 print(f"Failed to delete artifact {tiff_path}: {e}")
-
         gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 @app.task
 def scan_region(regioncords, lookback_days=30): #region later after i test
     init_earth_engine()
-    end_date = datetime.utcnow()
+    end_date = datetime.datetime.now(datetime.UTC)
     start_date_after = end_date - timedelta(days=lookback_days)
     start_date_before = start_date_after - timedelta(days=90)
 
@@ -135,6 +160,15 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     ndvi_delta = (image_before.select('NDVI').subtract(image_after.select('NDVI')))
     significant_loss = ndvi_delta.updateMask(forest_mask).gt(0.25) #max delta reskinned.
 
+    max_delta_obj = significant_loss.reduceRegion(
+        reducer=ee.Reducer.max(),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e6
+    ).get('NDVI')
+
+    max_delta = max_delta_obj.getInfo()
+
     is_deforestation = significant_loss.reduceRegion(
         reducer=ee.Reducer.max(),
         geometry=roi,
@@ -149,13 +183,6 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
         ['B4', 'B3', 'B2', 'B8']
     )
 
-    frontend_before_img = image_before.select(
-
-    )
-
-    frontend_after_img = image_after.select(
-
-    )
 
     request_payload = {
         "expression": ai_ready_image,
@@ -177,26 +204,39 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
         }
     }
 
-    tiff_bytes = ee.data.computePixels(request_payload)
-
-
-    filename = f"patch_{uuid.uuid4()}.tif"
-
-    path = f"artifacts/{filename}"
-
+    scan_id = str(uuid.uuid4())
+    os.makedirs("artifacts", exist_ok=True)
+    tiff_path = f"artifacts/patch_{scan_id}.tif"
     os.makedirs("artifacts", exist_ok=True)
 
-    with open(path, "wb") as f:
+    print(f"computing pixels for: {tiff_path}")
+    tiff_bytes = ee.data.computePixels(request_payload)
+    with open(tiff_path, "wb") as f:
         f.write(tiff_bytes)
 
+    vis_params = {'bands': ['B4', 'B3', 'B2'], 'min': 0.0, 'max': 0.3}
+    thumb_params = {'dimensions': '512x512', 'region': roi, 'format': 'png'}
 
-    ML_output.delay(path)
+    before_url = image_before.visualize(**vis_params).getThumbURL(thumb_params)
+    after_url = image_after.visualize(**vis_params).getThumbURL(thumb_params)
+
+    before_path = f"artifacts/before_{scan_id}.png"
+    after_path = f"artifacts/after_{scan_id}.png"
+
+    #visuals for fronteend
+    with open(before_path, "wb") as f:
+        f.write(requests.get(before_url).content)
+    with open(after_path, "wb") as f:
+        f.write(requests.get(after_url).content)
+
+
+    ML_output.delay(tiff_path)
 
 
     return {
         "detected": True,
-        "image": path,
-        "ndvi_drop": ndvi_delta
+        "image_before": before_path,
+        "image_after": after_path,
+        "ndvi_drop": max_delta
     }
 
-#ok were gonna have some OOM issues on deployment, we gotta find a way to reduce gpu and ram memory, compute pixels is one of them and pytorch
