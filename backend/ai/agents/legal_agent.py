@@ -3,6 +3,8 @@ from datetime import datetime
 import requests
 from dotenv import load_dotenv
 import os
+from groq import Groq
+
 load_dotenv()
 
 SYSTEM_PROMPT = """You are the CanopyWatch Legal Verification Agent. 
@@ -24,9 +26,10 @@ RULES:
 
 Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
+client = Groq(apikey=os.getenv("GROQ_API_KEY"))
 
-# im thinking of adding some secondary apis just for more accuracy! if i do add here :3
-
+model = "llama3-8b-8192" # autocomplete temp
+# add real model later
 def query_sinaflor_records(lat, lon):
     buffer = 0.008
     sql = f"""SELECT SITUACAO_AUTORIZACAO, DT_EMISSAO, DT_VALIDADE 
@@ -55,9 +58,79 @@ def get_permit_status(records, event_date_str):
             continue
     return "Illegal Logging (Presumed)"
 
-def call_llm():
-    pass
+def call_llm(messages):
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
+
+    text = response.choices[0].message.content
+
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        parsed = None
+
+    return {
+        "raw": text,
+        "json": parsed,
+    }
 
 
 def run_agent_loop(ai_response):
-    pass
+    history = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": json.dumps(ai_response),
+        },
+    ]
+
+    reasoning_steps = []
+
+    while True:
+        result = call_llm(history)
+
+        if result["json"] is None:
+            raise RuntimeError("LLM returned invalid JSON")
+
+        msg = result["json"]
+
+        history.append(
+            {
+                "role": "assistant",
+                "content": json.dumps(msg),
+            }
+        )
+
+        action = msg.get("action")
+
+        if action == "REASON": # likely wont reason more than once but i like it ok?
+            reasoning_steps.append(
+                {
+                    "summary": msg["reasoning"]
+                }
+            )
+
+            history.append(
+                {
+                    "role": "user",
+                    "content": "Continue reasoning or PUSH if ready.",
+                }
+            )
+
+            continue
+
+        if action == "PUSH":
+            return {
+                "status": msg["status"],
+                "reasoning": reasoning_steps,
+                "final_reasoning": msg["reasoning"],
+            }
+
+        raise RuntimeError(f"Unknown action: {action}")
