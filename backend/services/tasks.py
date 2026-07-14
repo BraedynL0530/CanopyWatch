@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from backend.ai.agents.legal_agent import run_agent_loop
 import torch
 import gc
+from backend.ai.models.model import forestClassifier
 import numpy as np
 
 load_dotenv()
@@ -47,13 +48,13 @@ def init_earth_engine():
 
 def load_model():
     global model
-    if model is  None:
-        model_path = os.getenv("MODEL_PATH")
-        model = torch.load(model_path)
-        model.load_state_dict(torch.load("canopywatch_v1.pth", map_location="cpu"))
+    if model is None:
+        model = forestClassifier()
+        weight_path = os.getenv("MODEL_PATH")
+        model.load_state_dict(torch.load(weight_path, map_location="cpu"))
         model.eval()
-        pass
     return model
+
 @app.task
 def ML_output(tiff_path):
     scan_id = os.path.basename(tiff_path).replace("patch_", "").replace(".tif", "")
