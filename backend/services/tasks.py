@@ -1,7 +1,7 @@
+import json
 import os
 import uuid
 from datetime import datetime, timedelta
-
 import ee
 import rasterio
 import requests
@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from backend.ai.agents.legal_agent import run_agent_loop
 import torch
 import gc
+import numpy as np
 
 load_dotenv()
 
@@ -55,60 +56,59 @@ def load_model():
     return model
 @app.task
 def ML_output(tiff_path):
+    scan_id = os.path.basename(tiff_path).replace("patch_", "").replace(".tif", "")
+
     try:
         if os.path.exists(tiff_path):
             with rasterio.open(tiff_path) as src:
                 img_array= src.read().astype('float32')
 
-            if img_array.max() > 255.0:
-                img_array = img_array / 10000.0
-            else:
-                img_array = img_array / 255.0
-
+            img_array = img_array / 10000.0 if img_array.max() > 255.0 else img_array / 255.0
             input_tensor = torch.from_numpy(img_array).unsqueeze(0)
-            del img_array
 
             model = load_model()
+            model.eval()
             with torch.no_grad():
                 output = model(input_tensor)
-                probabilities = torch.sigmoid(output).squeeze().cpu()
-                forest_pixels = probabilities[probabilities > 0.5]
-
-                if forest_pixels.numel() > 0:
-                    confidence = float(forest_pixels.mean().item())
-
-                else:
-                    confidence = float(probabilities.mean().item())
-
-                print(f"[ML Task] Inference completed. Forest Confidence: {confidence:.4f}")
-            del input_tensor
-
-            # TODO: Retrieve actual coordinates
-            latitude = -10.02
-            longitude = -62.01
+                mask = torch.sigmoid(output).squeeze().cpu().numpy()
+                forest_pixels = mask[mask > 0.5]
+                confidence = float(forest_pixels.mean()) if forest_pixels.size > 0 else float(mask.mean())
 
             ai_response = {
-                "lat": latitude,
-                "lon": longitude,
+                "lat": -10.02,
+                "lon": -62.01,
                 "confidence": round(confidence, 4),
-                "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+                "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
+                "mask": mask.tolist()
+            }
+            agent_verdict = run_agent_loop(ai_response)
+
+            # Build the result JSON for the frontend dashboard
+            final_result = {
+                "id": scan_id,
+                "status": agent_verdict.get("status", "Analyzed"),
+                "reason": agent_verdict.get("reason", "No significant activity found."),
+                "lat": ai_response["lat"],
+                "lon": ai_response["lon"],
+                "confidence": ai_response["confidence"],
+                "timestamp": datetime.datetime.utcnow().isoformat()
+
             }
 
-            # Trigger your Agent verification brain
-            run_agent_loop(ai_response)
+            with open(f"artifacts/result_{scan_id}.json", "w") as f:
+                json.dump(final_result, f)
             return ai_response
 
     except Exception as e:
         print(f"Error: {e}")
         raise e
 
+
     finally:
         if os.path.exists(tiff_path):
-            try:
-                os.remove(tiff_path)
-            except Exception as e:
-                print(f"Failed to delete artifact {tiff_path}: {e}")
+            os.remove(tiff_path)
         gc.collect()
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -207,7 +207,6 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     scan_id = str(uuid.uuid4())
     os.makedirs("artifacts", exist_ok=True)
     tiff_path = f"artifacts/patch_{scan_id}.tif"
-    os.makedirs("artifacts", exist_ok=True)
 
     print(f"computing pixels for: {tiff_path}")
     tiff_bytes = ee.data.computePixels(request_payload)
