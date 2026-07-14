@@ -1,17 +1,16 @@
-version: '3.8'
-
 services:
-  #Frontend
   frontend:
-    build: ./frontend
+    build: ./react-frontend
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - api
 
-  #backend
+  # Backend
   api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     environment:
@@ -20,17 +19,20 @@ services:
     depends_on:
       - redis
 
-  #Celery
+  # Celery
   worker:
-    build: ./backend
-    command: celery -A services.tasks worker --loglevel=info
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # Ensure the command points to the right path given the context
+    command: celery -A backend.services.tasks worker --loglevel=info
     environment:
       - REDIS_BROKER_URL=redis://redis:6379/0
       - REDIS_BACKEND_URL=redis://redis:6379/1
     depends_on:
       - redis
 
-  #Redis
+  # Redis
   redis:
     image: redis:alpine
     ports:
