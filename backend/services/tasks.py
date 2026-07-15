@@ -19,10 +19,7 @@ load_dotenv()
 app = Celery('tasks')
 app.config_from_object("backend.celery_config")
 
-app.conf.update(
-    imports=["tasks"],
-    task_always_eager=False #true to test
-)
+
 
 SERVICE_ACCOUNT_EMAIL = os.getenv("SERVICE_ACCOUNT_EMAIL")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
