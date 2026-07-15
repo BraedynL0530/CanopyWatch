@@ -15,7 +15,7 @@ app.mount("/static", StaticFiles(directory="backend/artifacts"), name="artifacts
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Update this to your frontend URL in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
