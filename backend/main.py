@@ -2,7 +2,7 @@ import json
 
 from fastapi import FastAPI, Response, status
 from dotenv import load_dotenv
-from services.tasks import scan_region
+from backend.services.tasks import scan_region
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import os
