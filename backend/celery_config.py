@@ -2,8 +2,8 @@ from celery import Celery
 
 app = Celery(
     "worker",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/1"
+    broker="redis://redis:6379/0",
+    backend="redis://redis:6379/1"
 )
 
 app.conf.update(
@@ -12,5 +12,5 @@ app.conf.update(
     accept_content=["json"],
     timezone="UTC",
     enable_utc=True,
-    imports=["services.tasks"]
+    imports=["backend.services.tasks"]
 )
