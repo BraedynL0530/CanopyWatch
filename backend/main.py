@@ -11,8 +11,7 @@ import psutil
 
 load_dotenv()
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="backend/artifacts"), name="artifacts")
-
+app.mount("/static", StaticFiles(directory="artifacts"), name="artifacts")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

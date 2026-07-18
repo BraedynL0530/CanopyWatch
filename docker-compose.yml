@@ -12,12 +12,16 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    env_file:
+      - .env  #DURRR
     environment:
       - PYTHONPATH=/app
       - REDIS_BROKER_URL=redis://redis:6379/0
       - REDIS_BACKEND_URL=redis://redis:6379/1
     ports:
       - "8000:8000"
+    volumes:
+      - shared_artifacts:/app/artifacts
     depends_on:
       - redis
 
