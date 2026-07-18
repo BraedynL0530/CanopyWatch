@@ -116,7 +116,7 @@ def ML_output(tiff_path):
 @app.task
 def scan_region(regioncords, lookback_days=30): #region later after i test
     init_earth_engine()
-    end_date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    end_date = datetime.datetime.now(datetime.UTC)
     start_date_after = end_date - timedelta(days=lookback_days)
     start_date_before = start_date_after - timedelta(days=90)
 
