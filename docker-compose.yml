@@ -43,8 +43,6 @@ services:
     build:
       context: .
       dockerfile: nginx.Dockerfile
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
     ports:
       - "80:80"
     depends_on:
