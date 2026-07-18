@@ -11,37 +11,43 @@ import psutil
 
 load_dotenv()
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="artifacts"), name="artifacts")
+app.mount("/static", StaticFiles(directory="/app/artifacts"), name="artifacts")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-@app.get("/api/scan")
+
+@app.get("/api/scan")#add ratliming here when i add a scan button + region stuff
 def start_scan(region):
     scan_region.delay(region)
     return {"message": "scan started"}
+
 
 @app.get("/api/get-latest-scans")
 def get_latest_scans():
     files = glob.glob("artifacts/*.json")
     if not files:
         return {"error": "No scans found"}
-    latest_file = max(files, key=os.path.getctime)
-    scan_id = os.path.basename(latest_file).replace("before_", "").replace(".png", "")
+
     results = []
 
     for f in files:
         with open(f, "r") as file:
             data = json.load(file)
             scan_id = data.get("id")
+
+            # Map the URLs to the /static endpoint we created
             data["before_url"] = f"/static/before_{scan_id}.png"
             data["after_url"] = f"/static/after_{scan_id}.png"
 
             results.append(data)
 
+    # Sort results so the newest one is at the top of the array
     results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+    # Wrap it in 'scans' so React can map over data.scans
     return {"scans": results}
 @app.get("/api/health")
 def health():

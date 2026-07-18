@@ -151,10 +151,27 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
             }
         ).rename('EVI')
 
-        return img.addBands([ndvi, evi])
+        return img.addBands([ndvi ,evi])
 
     image_before = get_composite(start_date_before, start_date_after) #yippe dynamic dates instead of old
     image_after = get_composite(start_date_after, end_date)
+    vis_params = {'bands': ['B4', 'B3', 'B2'], 'min': 0.0, 'max': 0.3}
+    thumb_params = {'dimensions': '512x512', 'region': roi, 'format': 'png'}
+
+    before_url = image_before.visualize(**vis_params).getThumbURL(thumb_params)
+    after_url = image_after.visualize(**vis_params).getThumbURL(thumb_params)
+
+    scan_id = str(uuid.uuid4())
+    os.makedirs("artifacts", exist_ok=True)
+
+    before_path = f"artifacts/before_{scan_id}.png"
+    after_path = f"artifacts/after_{scan_id}.png"
+
+    # visuals for fronteend
+    with open(before_path, "wb") as f:
+        f.write(requests.get(before_url).content)
+    with open(after_path, "wb") as f:
+        f.write(requests.get(after_url).content)
 
 
     forest_mask = image_before.select('EVI').gte(0.6).And(image_before.select('EVI').lte(0.9)) #should ignore if its not a forest
@@ -178,7 +195,6 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     ).get('NDVI')
 
     if is_deforestation.getInfo() is None or is_deforestation.getInfo() == 0:
-        scan_id = str(uuid.uuid4())
         clean_result = {
             "id": scan_id,
             "status": "Analyzed",
@@ -189,7 +205,6 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
             "lon": (coords[0] + coords[2]) / 2
         }
 
-        os.makedirs("artifacts", exist_ok=True)
         with open(f"artifacts/result_{scan_id}.json", "w") as f:
             json.dump(clean_result, f)
 
@@ -220,30 +235,12 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
         }
     }
 
-    scan_id = str(uuid.uuid4())
-    os.makedirs("artifacts", exist_ok=True)
     tiff_path = f"artifacts/patch_{scan_id}.tif"
 
     print(f"computing pixels for: {tiff_path}")
     tiff_bytes = ee.data.computePixels(request_payload)
     with open(tiff_path, "wb") as f:
         f.write(tiff_bytes)
-
-    vis_params = {'bands': ['B4', 'B3', 'B2'], 'min': 0.0, 'max': 0.3}
-    thumb_params = {'dimensions': '512x512', 'region': roi, 'format': 'png'}
-
-    before_url = image_before.visualize(**vis_params).getThumbURL(thumb_params)
-    after_url = image_after.visualize(**vis_params).getThumbURL(thumb_params)
-
-    before_path = f"artifacts/before_{scan_id}.png"
-    after_path = f"artifacts/after_{scan_id}.png"
-
-    #visuals for fronteend
-    with open(before_path, "wb") as f:
-        f.write(requests.get(before_url).content)
-    with open(after_path, "wb") as f:
-        f.write(requests.get(after_url).content)
-
 
     ML_output.delay(tiff_path)
 
