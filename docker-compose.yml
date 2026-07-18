@@ -18,10 +18,10 @@ services:
       - PYTHONPATH=/app
       - REDIS_BROKER_URL=redis://redis:6379/0
       - REDIS_BACKEND_URL=redis://redis:6379/1
-    ports:
-      - "8000:8000"
     volumes:
       - shared_artifacts:/app/artifacts
+    ports:
+      - "8000:8000"
     depends_on:
       - redis
 
@@ -34,6 +34,9 @@ services:
     environment:
       - REDIS_BROKER_URL=redis://redis:6379/0
       - REDIS_BACKEND_URL=redis://redis:6379/1
+    volumes:
+      - shared_artifacts:/app/artifacts
+      - ./backend/canopywatch-501723-a043d6a0ac0b.json:/app/canopywatch-501723-a043d6a0ac0b.json:ro
     depends_on:
       - redis
 
@@ -52,3 +55,6 @@ services:
     depends_on:
       - api
       - frontend
+
+volumes:
+  shared_artifacts: {}
