@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    command: celery -A backend.services.tasks worker --loglevel=info
+    command: celery -A backend.services.tasks worker --loglevel=info --concurrency=1
     environment:
       - REDIS_BROKER_URL=redis://redis:6379/0
       - REDIS_BACKEND_URL=redis://redis:6379/1
