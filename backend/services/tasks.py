@@ -92,7 +92,7 @@ def ML_output(tiff_path):
                 "lat": ai_response["lat"],
                 "lon": ai_response["lon"],
                 "confidence": ai_response["confidence"],
-                "timestamp": datetime.datetime.utcnow().isoformat()
+                "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
             }
 
@@ -116,7 +116,7 @@ def ML_output(tiff_path):
 @app.task
 def scan_region(regioncords, lookback_days=30): #region later after i test
     init_earth_engine()
-    end_date = datetime.datetime.now(datetime.UTC)
+    end_date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     start_date_after = end_date - timedelta(days=lookback_days)
     start_date_before = start_date_after - timedelta(days=90)
 
@@ -178,6 +178,21 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     ).get('NDVI')
 
     if is_deforestation.getInfo() is None or is_deforestation.getInfo() == 0:
+        scan_id = str(uuid.uuid4())
+        clean_result = {
+            "id": scan_id,
+            "status": "Analyzed",
+            "reason": "No significant forest canopy loss detected.",
+            "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
+            "confidence": 1.0,
+            "lat": (coords[1] + coords[3]) / 2,
+            "lon": (coords[0] + coords[2]) / 2
+        }
+
+        os.makedirs("artifacts", exist_ok=True)
+        with open(f"artifacts/result_{scan_id}.json", "w") as f:
+            json.dump(clean_result, f)
+
         return {"detected": False, "reason": "No significant forest canopy loss detected."}
 
     ai_ready_image = image_after.select(
