@@ -1,7 +1,8 @@
 import json
 import os
 import uuid
-from datetime import datetime, timedelta
+import datetime #lazy fix suck it idc
+from datetime import timedelta
 import ee
 import rasterio
 import requests
