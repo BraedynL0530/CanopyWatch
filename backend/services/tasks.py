@@ -27,7 +27,7 @@ PROJECT_ID = os.getenv("PROJECT_ID")
 
 
 def init_earth_engine():
-    if not ee.data._initialized:
+    if not ee.data.is_initialized():
         SERVICE_ACCOUNT_EMAIL = os.getenv("SERVICE_ACCOUNT_EMAIL")
         KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
         PROJECT_ID = os.getenv("PROJECT_ID")
@@ -37,6 +37,8 @@ def init_earth_engine():
             ee.Initialize(credentials, project=PROJECT_ID)
             print("GEE Authenticated Successfully inside Worker!")
         except Exception as e:
+            ee.Authenticate()  # Only if not already authenticated
+            ee.Initialize()
             print(f"Failed to authenticate with GEE: {e}")
             raise e
 
