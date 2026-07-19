@@ -69,9 +69,8 @@ export default function App() {
         setLoading(false);
       }
     };
-    // fetchRealData();
-    // Commented out the fetch and manually setting loading to false for UI testing.
-    // Remove this manual override when your backend is running.
+     fetchRealData();
+
     setLoading(false);
   }, []);
 
