@@ -153,8 +153,21 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
 
         return img.addBands([ndvi ,evi])
 
+    def get_s1_composite(start, end):
+        return (ee.ImageCollection('COPERNICUS/S1_GRD')
+                .filterBounds(roi)
+                .filterDate(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d'))
+                .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
+                .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH'))
+                .filter(ee.Filter.eq('instrumentMode', 'IW'))
+                .median()
+                .clip(roi)
+                .select(['VV', 'VH']))
+
     image_before = get_composite(start_date_before, start_date_after) #yippe dynamic dates instead of old
     image_after = get_composite(start_date_after, end_date)
+    s1_after = get_s1_composite(start_date_after, end_date)
+
     vis_params = {'bands': ['B4', 'B3', 'B2'], 'min': 0.0, 'max': 0.3}
     thumb_params = {'dimensions': '512x512', 'region': roi, 'format': 'png'}
 
@@ -210,9 +223,7 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
 
         return {"detected": False, "reason": "No significant forest canopy loss detected."}
 
-    ai_ready_image = image_after.select(
-        ['B4', 'B3', 'B2', 'B8']
-    )
+    ai_ready_image = image_after.select(['B4', 'B3', 'B2', 'B8']).addBands(s1_after)
 
 
     request_payload = {
