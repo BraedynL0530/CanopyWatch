@@ -39,6 +39,7 @@ services:
     volumes:
       - shared_artifacts:/app/artifacts
       - ./backend/canopywatch-501723-a043d6a0ac0b.json:/app/canopywatch-501723-a043d6a0ac0b.json:ro
+      - ./backend/ai/models:/app/ai/models:ro
     depends_on:
       - redis
 
