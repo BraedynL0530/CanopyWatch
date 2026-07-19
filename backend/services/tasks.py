@@ -44,7 +44,26 @@ def init_earth_engine():
         raise e
 
 
-
+def generate_tiff_payload(ee_image, coords):
+    return {
+        "expression": ee_image,
+        "fileFormat": "GEO_TIFF",
+        "grid": {
+            "dimensions": {
+                "width": 512,
+                "height": 512
+            },
+            "crsCode": "EPSG:4326",
+            "affineTransform": {
+                "scaleX": (coords[2] - coords[0]) / 512,
+                "translateX": coords[0],
+                "scaleY": (coords[3] - coords[1]) / 512,
+                "translateY": coords[3],
+                "shearX": 0,
+                "shearY": 0
+            }
+        }
+    }
 
 def load_model():
     global model
@@ -56,30 +75,41 @@ def load_model():
     return model
 
 @app.task
-def ML_output(tiff_path, iscloudy,lat,lon):
-    scan_id = os.path.basename(tiff_path).replace("patch_", "").replace(".tif", "")
+def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
+    scan_id = os.path.basename(before_tiff).replace("patch_", "").replace(".tif", "")
 
     try:
-        if os.path.exists(tiff_path):
-            with rasterio.open(tiff_path) as src:
-                img_array= src.read().astype('float32')
+        if os.path.exists(before_tiff and after_tiff):
+            with rasterio.open(before_tiff) as src:
+                before_img_array= src.read().astype('float32')
+            with rasterio.open(after_tiff) as src:
+                after_img_array= src.read().astype('float32')
 
-            img_array = img_array / 10000.0 if img_array.max() > 255.0 else img_array / 255.0
-            input_tensor = torch.from_numpy(img_array).unsqueeze(0)
+            before_img_array = before_img_array / 10000.0 if before_img_array.max() > 255.0 else before_img_array / 255.0
+            after_img_array = after_img_array / 10000.0 if after_img_array.max() > 255.0 else after_img_array / 255.0
+
+            before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
+            after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
 
             model = load_model()
             model.eval()
             with torch.no_grad():
-                output = model(input_tensor)
-                mask = torch.sigmoid(output).squeeze().cpu().numpy()
-                forest_pixels = mask[mask > 0.5]
-                confidence = float(forest_pixels.mean()) if forest_pixels.size > 0 else float(mask.mean())
+                mask_before = model(before_input_tensor) # 0 = dirt 1 = trees in between n stuff too
+                mask_after = model(after_input_tensor)
+
+                deforestation_mask = mask_before - mask_after # now if its 0 no change if its 1 change
+                deforestation_mask = np.clip(deforestation_mask, 0, 1)# so trees growing arent false flagged(-1)
+
+                mask_np = deforestation_mask.detach().cpu().numpy()
+                total_pixels = mask_np.size
+                deforested_pixels = np.sum(deforestation_mask)
+                damage_percentage = deforested_pixels / total_pixels
 
             ai_response = {
                 "lat": lat,
                 "lon": lon,
                 "cloudy_img": iscloudy,
-                "confidence": round(confidence, 4),
+                "damage_percentage": round(damage_percentage, 4),
                 "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
                 #mask was blowing up tokens
             }
@@ -92,7 +122,7 @@ def ML_output(tiff_path, iscloudy,lat,lon):
                 "reasoning":agent_verdict.get("reasoning", "No significant activity found."),
                 "lat": ai_response["lat"],
                 "lon": ai_response["lon"],
-                "confidence": ai_response["confidence"],
+                "damage_percentage": ai_response["damage_percentage"],
                 "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
             }
@@ -107,8 +137,10 @@ def ML_output(tiff_path, iscloudy,lat,lon):
 
 
     finally:
-        if os.path.exists(tiff_path):
-            os.remove(tiff_path)
+        if os.path.exists(before_tiff):
+            os.remove(before_tiff)
+            os.remove(after_tiff)
+
         gc.collect()
 
         if torch.cuda.is_available():
@@ -236,42 +268,34 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
 
         return {"detected": False, "reason": "No significant forest canopy loss detected."}
 
-    ai_ready_image = image_after.select(['B4', 'B3', 'B2', 'B8'])
+    ai_image_after = image_after.select(['B4', 'B3', 'B2', 'B8'])
+    ai_image_before = image_before.select(['B4', 'B3', 'B2', 'B8'])
 
-
-    request_payload = {
-        "expression": ai_ready_image,
-        "fileFormat": "GEO_TIFF",
-        "grid": {
-            "dimensions": {
-                "width": 512,
-                "height": 512
-            },
-            "crsCode": "EPSG:4326",
-            "affineTransform": {
-                "scaleX": (coords[2]-coords[0]) / 512,
-                "translateX": coords[0],
-                "scaleY": (coords[3]-coords[1]) / 512,
-                "translateY": coords[3],
-                "shearX": 0,
-                "shearY": 0
-            }
-        }
+    path_before = f"artifacts/before_{scan_id}.tif"
+    path_after = f"artifacts/after_{scan_id}.tif"
+    scans = {
+        "before": ai_image_before,
+        "after": ai_image_after
     }
 
-    tiff_path = f"artifacts/patch_{scan_id}.tif"
+    saved_paths = {}
 
-    print(f"computing pixels for: {tiff_path}")
-    tiff_bytes = ee.data.computePixels(request_payload)
-    with open(tiff_path, "wb") as f:
-        f.write(tiff_bytes)
+    for time_period, ee_img in scans.items():
+        payload = generate_tiff_payload(ee_img, coords)
+        tiff_path = f"artifacts/{time_period}_{scan_id}.tif"
+
+        saved_paths[time_period] = tiff_path
 
     centroid = roi.centroid().coordinates().getInfo()
 
     lon = centroid[0]
     lat = centroid[1]
 
-    ML_output.delay(tiff_path,is_cloudy,lat,lon)
+    ML_output.delay(saved_paths["before"], saved_paths["after"], is_cloudy, lat, lon)
+
+
+
+
 
 
     return {
@@ -360,69 +384,58 @@ def seed_historical_data():
         with open(before_path, "wb") as f:
             f.write(
                 requests.get(
-                    image_before.visualize(**vis_params).getThumbURL(
-                        thumb_params
-                    )
+                    image_before.visualize(**vis_params).getThumbURL(thumb_params)
                 ).content
             )
 
         with open(after_path, "wb") as f:
             f.write(
                 requests.get(
-                    image_after.visualize(**vis_params).getThumbURL(
-                        thumb_params
-                    )
+                    image_after.visualize(**vis_params).getThumbURL(thumb_params)
                 ).content
             )
 
-        ai_ready_image = (
-            image_after
-            .select(["B4", "B3", "B2", "B8"])
+        ai_before = image_before.select(["B4", "B3", "B2", "B8"])
+        ai_after = image_after.select(["B4", "B3", "B2", "B8"])
+
+        saved_paths = {}
+
+        for period, ee_img in {
+            "before": ai_before,
+            "after": ai_after,
+        }.items():
+            payload = generate_tiff_payload(ee_img, coords)
+            tiff_path = f"artifacts/{period}_{scan_id}.tif"
+
+            with open(tiff_path, "wb") as f:
+                f.write(ee.data.computePixels(payload))
+
+            saved_paths[period] = tiff_path
+
+        centroid = roi.centroid().coordinates().getInfo()
+        lon = centroid[0]
+        lat = centroid[1]
+
+        ML_output.delay(
+            saved_paths["before"],
+            saved_paths["after"],
+            False,
+            lat,
+            lon,
         )
-
-        request_payload = {
-            "expression": ai_ready_image,
-            "fileFormat": "GEO_TIFF",
-            "grid": {
-                "dimensions": {
-                    "width": 512,
-                    "height": 512,
-                },
-                "crsCode": "EPSG:4326",
-                "affineTransform": {
-                    "scaleX": (coords[2] - coords[0]) / 512,
-                    "translateX": coords[0],
-                    "scaleY": (coords[3] - coords[1]) / 512,
-                    "translateY": coords[3],
-                    "shearX": 0,
-                    "shearY": 0,
-                },
-            },
-        }
-
-        tiff_path = f"artifacts/patch_{scan_id}.tif"
-
-        with open(tiff_path, "wb") as f:
-            f.write(ee.data.computePixels(request_payload))
-
-        ML_output.delay(tiff_path, False)
 
         results.append(
             {
                 "id": scan_id,
-                "image_before": before_path,
-                "image_after": after_path,
-                "lat": (coords[1] + coords[3]) / 2,
-                "lon": (coords[0] + coords[2]) / 2,
                 "status": "Queued",
                 "reason": "Historical scan queued for AI analysis.",
+                "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
+                "cloud_masked": False,
+                "lat": lat,
+                "lon": lon,
+                "before_url": f"/static/before_{scan_id}.png",
+                "after_url": f"/static/after_{scan_id}.png",
             }
         )
-
-    return {
-        "status": "success",
-        "reason": f"Queued {len(results)} historical scans.",
-        "scans": results,
-    }
 
 #Debug further if needed

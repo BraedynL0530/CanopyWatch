@@ -50,7 +50,7 @@ export default function App() {
           lat: scan.lat,
           lon: scan.lon,
           date: scan.timestamp,
-          confidence: scan.confidence,
+          damage_percentage: scan.damage_percentage, // not used yet
           status: scan.status,
           reason: scan.reason,
           ndviDrop: scan.ndvi_drop,

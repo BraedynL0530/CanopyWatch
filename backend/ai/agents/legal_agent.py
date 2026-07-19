@@ -19,8 +19,9 @@ OPERATE IN THIS LOOP:
 RULES:
 - You must REASON at least once before PUSH.
 - status must be one of: "Illegal Logging (Presumed)", "Needs Permit", "Legal", or "Unknown".
-- confidence refers to a number between 0 and 1, where 1 is 100% confidence that deforestation occured.
-- Incorporate specific data points into your reasoning (e.g., 'Confidence: 0.96', 'NDVI delta: 0.3', 'Permit status: No records found').
+damage_percentage: The estimated ratio (ranging from 0.0 to 1.0) of dense forest pixels within the targeted region that have been cleared or altered between the 'before' and 'after' scans, according to the change-detection model. 
+- 0.0 means zero forest loss detected.
+- 1.0 means 100% of the forest cover in the target area has been removed.- Incorporate specific data points into your reasoning (e.g., 'Confidence: 0.96', 'NDVI delta: 0.3', 'Permit status: No records found').
 - DO NOT output conversational text. ONLY JSON.
 """
 
@@ -28,8 +29,7 @@ Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-model = "llama-3.1-8b-instant" # idiot forgot it was temp
-# add real model later
+model = "llama-3.1-8b-instant"
 def query_sinaflor_records(lat, lon):
     buffer = 0.008
     sql = f"""SELECT SITUACAO_AUTORIZACAO, DT_EMISSAO, DT_VALIDADE 
