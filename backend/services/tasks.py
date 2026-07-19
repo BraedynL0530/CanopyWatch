@@ -81,7 +81,7 @@ def ML_output(tiff_path, iscloudy,lat,lon):
                 "cloudy_img": iscloudy,
                 "confidence": round(confidence, 4),
                 "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
-                "mask": mask.tolist()
+                #mask was blowing up tokens
             }
             agent_verdict = run_agent_loop(ai_response)
 
