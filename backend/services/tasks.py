@@ -26,7 +26,7 @@ SERVICE_ACCOUNT_EMAIL = os.getenv("SERVICE_ACCOUNT_EMAIL")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
 PROJECT_ID = os.getenv("PROJECT_ID")
 
-
+model = None
 def init_earth_engine():
     try:
         project_id = os.getenv('PROJECT_ID')
