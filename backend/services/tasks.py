@@ -76,8 +76,7 @@ def load_model():
 
 @app.task
 def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
-    scan_id = os.path.basename(before_tiff).replace("patch_", "").replace(".tif", "")
-
+    scan_id = (os.path.basename(before_tiff).replace("before_", "").replace(".tif", ""))
     try:
         if os.path.exists(before_tiff and after_tiff):
             with rasterio.open(before_tiff) as src:
@@ -94,15 +93,14 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             model = load_model()
             model.eval()
             with torch.no_grad():
-                mask_before = model(before_input_tensor) # 0 = dirt 1 = trees in between n stuff too
-                mask_after = model(after_input_tensor)
+                mask_before = torch.sigmoid(model(before_input_tensor)) # 1 = tree 0 = dirt/building
+                mask_after = torch.sigmoid(model(after_input_tensor))
 
-                deforestation_mask = mask_before - mask_after # now if its 0 no change if its 1 change
-                deforestation_mask = np.clip(deforestation_mask, 0, 1)# so trees growing arent false flagged(-1)
+                deforestation_mask = torch.clamp(mask_before - mask_after, 0, 1)# 0 = no change 1 = deforestation and doesnt allow -1 incase trees grow so trees growing arent false flagged(-1)
 
-                mask_np = deforestation_mask.detach().cpu().numpy()
+                mask_np = deforestation_mask.squeeze().cpu().numpy()
                 total_pixels = mask_np.size
-                deforested_pixels = np.sum(deforestation_mask)
+                deforested_pixels = np.count_nonzero(mask_np > 0.4)
                 damage_percentage = deforested_pixels / total_pixels
 
             ai_response = {
@@ -139,6 +137,8 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
     finally:
         if os.path.exists(before_tiff):
             os.remove(before_tiff)
+
+        if os.path.exists(after_tiff):
             os.remove(after_tiff)
 
         gc.collect()
@@ -208,7 +208,7 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
                 .clip(roi)
                 .select(['VV', 'VH']))
 
-    image_before = get_composite(start_date_before, start_date_after) #yippe dynamic dates instead of old
+    image_before = get_composite(start_date_before, start_date_after)
     image_after = get_composite(start_date_after, end_date)
     s1_after = get_s1_composite(start_date_after, end_date)
 
@@ -283,6 +283,11 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     for time_period, ee_img in scans.items():
         payload = generate_tiff_payload(ee_img, coords)
         tiff_path = f"artifacts/{time_period}_{scan_id}.tif"
+
+        tiff_bytes = ee.data.computePixels(payload)
+
+        with open(tiff_path, "wb") as f:
+            f.write(tiff_bytes)
 
         saved_paths[time_period] = tiff_path
 
