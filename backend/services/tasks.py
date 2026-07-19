@@ -235,7 +235,7 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
 
         return {"detected": False, "reason": "No significant forest canopy loss detected."}
 
-    ai_ready_image = image_after.select(['B4', 'B3', 'B2', 'B8']).addBands(s1_after)
+    ai_ready_image = image_after.select(['B4', 'B3', 'B2', 'B8'])
 
 
     request_payload = {
