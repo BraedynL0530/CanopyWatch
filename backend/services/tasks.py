@@ -89,6 +89,7 @@ def ML_output(tiff_path, iscloudy,lat,lon):
                 "id": scan_id,
                 "status": agent_verdict.get("status", "Analyzed"),
                 "reason": agent_verdict.get("final_reasoning", "No significant activity found."),
+                "reasoning":agent_verdict.get("reasoning", "No significant activity found."),
                 "lat": ai_response["lat"],
                 "lon": ai_response["lon"],
                 "confidence": ai_response["confidence"],

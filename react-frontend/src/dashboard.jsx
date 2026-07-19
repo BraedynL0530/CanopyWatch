@@ -54,7 +54,7 @@ export default function App() {
           status: scan.status,
           reason: scan.reason,
           ndviDrop: scan.ndvi_drop,
-          cot: scan.logs || [],
+          cot: scan.reasoning || [],
           images: {
             before: scan.before_url,
             after: scan.after_url

@@ -11,7 +11,7 @@ import psutil
 
 load_dotenv()
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="/app/artifacts"), name="artifacts")
+app.mount("/api/static", StaticFiles(directory="/app/artifacts"), name="artifacts")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,8 +38,8 @@ def get_latest_scans():
             data = json.load(file)
             scan_id = data.get("id")
 
-            data["before_url"] = f"/static/before_{scan_id}.png"
-            data["after_url"] = f"/static/after_{scan_id}.png"
+            data["before_url"] = f"/api/static/before_{scan_id}.png"
+            data["after_url"] = f"/api/static/after_{scan_id}.png"
 
             results.append(data)
 
