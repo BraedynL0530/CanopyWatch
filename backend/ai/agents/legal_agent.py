@@ -28,7 +28,7 @@ Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-model = "llama3-8b-8192" # autocomplete temp
+model = "llama-3.1-8b-instant" # idiot forgot it was temp
 # add real model later
 def query_sinaflor_records(lat, lon):
     buffer = 0.008
