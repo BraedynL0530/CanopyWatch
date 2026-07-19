@@ -56,7 +56,7 @@ def load_model():
     return model
 
 @app.task
-def ML_output(tiff_path):
+def ML_output(tiff_path, iscloudy,lat,lon):
     scan_id = os.path.basename(tiff_path).replace("patch_", "").replace(".tif", "")
 
     try:
@@ -76,19 +76,19 @@ def ML_output(tiff_path):
                 confidence = float(forest_pixels.mean()) if forest_pixels.size > 0 else float(mask.mean())
 
             ai_response = {
-                "lat": -10.02,
-                "lon": -62.01,
+                "lat": lat,
+                "lon": lon,
+                "cloudy_img": iscloudy,
                 "confidence": round(confidence, 4),
                 "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
                 "mask": mask.tolist()
             }
             agent_verdict = run_agent_loop(ai_response)
 
-            # Build the result JSON for the frontend dashboard
             final_result = {
                 "id": scan_id,
                 "status": agent_verdict.get("status", "Analyzed"),
-                "reason": agent_verdict.get("reason", "No significant activity found."),
+                "reason": agent_verdict.get("final_reasoning", "No significant activity found."),
                 "lat": ai_response["lat"],
                 "lon": ai_response["lon"],
                 "confidence": ai_response["confidence"],
@@ -119,10 +119,21 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     end_date = datetime.datetime.now(datetime.UTC)
     start_date_after = end_date - timedelta(days=lookback_days)
     start_date_before = start_date_after - timedelta(days=90)
+    is_cloudy = False
 
     # Rondonia, Brazil
     coords = [-62.05, -10.05, -62.00, -10.00]
     roi = ee.Geometry.Rectangle(coords)
+
+    s2_collection = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') # yes i did it twice no i dont care
+                     .filterBounds(roi)
+                     .filterDate(start_date_after.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+
+    cloud_stats = s2_collection.aggregate_stats('CLOUDY_PIXEL_PERCENTAGE').getInfo()
+    avg_clouds = cloud_stats.get('mean', 0)
+
+    if avg_clouds > 50:
+        return {"detected": False, "reason": "Cloud cover too high (>50%). Scan aborted."}
 
     def mask_clouds(img):
         qa = img.select('QA60')
@@ -211,6 +222,7 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
         clean_result = {
             "id": scan_id,
             "status": "Analyzed",
+            "cloud_masked": is_cloudy,
             "reason": "No significant forest canopy loss detected.",
             "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
             "confidence": 1.0,
@@ -253,7 +265,12 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     with open(tiff_path, "wb") as f:
         f.write(tiff_bytes)
 
-    ML_output.delay(tiff_path)
+    centroid = roi.centroid().coordinates().getInfo()
+
+    lon = centroid[0]
+    lat = centroid[1]
+
+    ML_output.delay(tiff_path,is_cloudy,lat,lon)
 
 
     return {
@@ -263,3 +280,148 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
         "ndvi_drop": max_delta
     }
 
+
+@app.task
+def seed_historical_data():
+    init_earth_engine()
+    os.makedirs("artifacts", exist_ok=True)
+
+    hotspots = [
+        {"name": "Rondonia_Fishbone", "coords": [-62.20, -10.30, -62.10, -10.20]},
+        {"name": "Mato_Grosso_Agri", "coords": [-55.10, -11.50, -55.00, -11.40]},
+        {"name": "Para_Logging", "coords": [-53.50, -5.50, -53.40, -5.40]},
+    ]
+
+    start_before = datetime.datetime(2018, 6, 1, tzinfo=datetime.UTC)
+    end_before = datetime.datetime(2018, 8, 31, tzinfo=datetime.UTC)
+
+    start_after = datetime.datetime(2020, 6, 1, tzinfo=datetime.UTC)
+    end_after = datetime.datetime(2020, 8, 31, tzinfo=datetime.UTC)
+
+    def mask_clouds(img):
+        qa = img.select("QA60")
+        mask = (
+            qa.bitwiseAnd(1 << 10).eq(0)
+            .And(qa.bitwiseAnd(1 << 11).eq(0))
+        )
+        return img.updateMask(mask).divide(10000)
+
+    def get_composite(start, end, roi):
+        img = (
+            ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+            .filterBounds(roi)
+            .filterDate(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+            .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+            .map(mask_clouds)
+            .median()
+            .clip(roi)
+        )
+
+        ndvi = img.normalizedDifference(["B8", "B4"]).rename("NDVI")
+
+        evi = img.expression(
+            "2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1.0))",
+            {
+                "NIR": img.select("B8"),
+                "RED": img.select("B4"),
+                "BLUE": img.select("B2"),
+            },
+        ).rename("EVI")
+
+        return img.addBands([ndvi, evi])
+
+
+    results = []
+
+    for spot in hotspots:
+        coords = spot["coords"]
+        roi = ee.Geometry.Rectangle(coords)
+        scan_id = f"historical_{spot['name']}_{uuid.uuid4().hex[:6]}"
+
+        image_before = get_composite(start_before, end_before, roi)
+        image_after = get_composite(start_after, end_after, roi)
+
+        vis_params = {
+            "bands": ["B4", "B3", "B2"],
+            "min": 0.0,
+            "max": 0.3,
+        }
+
+        thumb_params = {
+            "dimensions": "512x512",
+            "region": roi,
+            "format": "png",
+        }
+
+        before_path = f"artifacts/before_{scan_id}.png"
+        after_path = f"artifacts/after_{scan_id}.png"
+
+        with open(before_path, "wb") as f:
+            f.write(
+                requests.get(
+                    image_before.visualize(**vis_params).getThumbURL(
+                        thumb_params
+                    )
+                ).content
+            )
+
+        with open(after_path, "wb") as f:
+            f.write(
+                requests.get(
+                    image_after.visualize(**vis_params).getThumbURL(
+                        thumb_params
+                    )
+                ).content
+            )
+
+        ai_ready_image = (
+            image_after
+            .select(["B4", "B3", "B2", "B8"])
+        )
+
+        request_payload = {
+            "expression": ai_ready_image,
+            "fileFormat": "GEO_TIFF",
+            "grid": {
+                "dimensions": {
+                    "width": 512,
+                    "height": 512,
+                },
+                "crsCode": "EPSG:4326",
+                "affineTransform": {
+                    "scaleX": (coords[2] - coords[0]) / 512,
+                    "translateX": coords[0],
+                    "scaleY": (coords[3] - coords[1]) / 512,
+                    "translateY": coords[3],
+                    "shearX": 0,
+                    "shearY": 0,
+                },
+            },
+        }
+
+        tiff_path = f"artifacts/patch_{scan_id}.tif"
+
+        with open(tiff_path, "wb") as f:
+            f.write(ee.data.computePixels(request_payload))
+
+        ML_output.delay(tiff_path, False)
+
+        results.append(
+            {
+                "id": scan_id,
+                "image_before": before_path,
+                "image_after": after_path,
+                "lat": (coords[1] + coords[3]) / 2,
+                "lon": (coords[0] + coords[2]) / 2,
+                "status": "Queued",
+                "reason": "Historical scan queued for AI analysis.",
+            }
+        )
+
+    return {
+        "status": "success",
+        "reason": f"Queued {len(results)} historical scans.",
+        "scans": results,
+    }
+
+#Debug further if needed/

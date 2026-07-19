@@ -2,7 +2,7 @@ import json
 
 from fastapi import FastAPI, Response, status
 from dotenv import load_dotenv
-from backend.services.tasks import scan_region
+from backend.services.tasks import scan_region,seed_historical_data
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import os
@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api/scan")#add ratliming here when i add a scan button + region stuff
+@app.get("/api/scan")
 def start_scan(region):
     scan_region.delay(region)
     return {"message": "scan started"}
@@ -38,17 +38,19 @@ def get_latest_scans():
             data = json.load(file)
             scan_id = data.get("id")
 
-            # Map the URLs to the /static endpoint we created
             data["before_url"] = f"/static/before_{scan_id}.png"
             data["after_url"] = f"/static/after_{scan_id}.png"
 
             results.append(data)
 
-    # Sort results so the newest one is at the top of the array
     results.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
 
-    # Wrap it in 'scans' so React can map over data.scans
     return {"scans": results}
+
+@app.get("/api/historic-scans") # one of on prod then api is removed./
+def historic_scans():
+    seed_historical_data.delay()
+    return {"message": "scan started"}
 @app.get("/api/health")
 def health():
     RAM = psutil.virtual_memory().percent
