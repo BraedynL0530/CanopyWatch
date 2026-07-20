@@ -128,9 +128,12 @@ export default function App() {
               className="bg-[#0a0a0a] border border-[#333] text-[#e0e0e0] font-mono text-sm px-3 py-2 rounded-sm focus:outline-none focus:border-[#00ff9d] cursor-pointer appearance-none min-w-[180px]"
             >
               <option value="brazil">Brazil (Amazon)</option>
-              {/* Easy to expand later: */}
-              <option value="indonesia">Indonesia (Borneo)</option>
-              <option value="drc">DR Congo Basin</option>
+              <option value="indonesia" disabled className="text-gray-600 bg-[#0a0a0a]">
+                Indonesia (Borneo) — Coming Soon
+              </option>
+              <option value="drc" disabled className="text-gray-600 bg-[#0a0a0a]">
+                DR Congo Basin — Coming Soon
+              </option>
             </select>
           </div>
 

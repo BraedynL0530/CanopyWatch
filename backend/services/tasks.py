@@ -78,12 +78,28 @@ def load_model():
             raise e # becaues it keeps saying 0,0 damange but model works not over fitted or anything!!!
     return model
 
+def chunk_region(coords, n_lon=4, n_lat=3, overlap_pct=0.1):
+    min_lon, min_lat, max_lon, max_lat = coords
+    lon_step = (max_lon - min_lon) / n_lon
+    lat_step = (max_lat - min_lat) / n_lat
+    lon_pad = lon_step * overlap_pct
+    lat_pad = lat_step * overlap_pct
+    chunks = []
+    for i in range(n_lon):
+        for j in range(n_lat):
+            chunks.append([
+                min_lon + i * lon_step - lon_pad,
+                min_lat + j * lat_step - lat_pad,
+                min_lon + (i + 1) * lon_step + lon_pad,
+                min_lat + (j + 1) * lat_step + lat_pad,
+            ])
+    return chunks
 
 @app.task
 def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
     scan_id = (os.path.basename(before_tiff).replace("before_", "").replace(".tif", ""))
     try:
-        if os.path.exists(before_tiff and after_tiff):
+        if os.path.exists(before_tiff) and os.path.exists(after_tiff):
             with rasterio.open(before_tiff) as src:
                 before_img_array= src.read().astype('float32')
             with rasterio.open(after_tiff) as src:
@@ -110,16 +126,14 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 prob_before = torch.sigmoid(model(before_input_tensor))
                 prob_after = torch.sigmoid(model(after_input_tensor))
 
-                forest_before = (prob_before >= 0.5).float()
-                forest_after = (prob_after >= 0.5).float() # .5+ confidence is a tree
+                forest_before = (prob_before >= 0.5).float()  # keep this — defines "was this forest at all"
 
-                deforestation_mask = torch.clamp(forest_before - forest_after, 0, 1) #clamp prevents tree growth from crashing model
+                prob_drop = (prob_before - prob_after).clamp(min=0)
+                deforestation_mask = (prob_drop >= 0.3).float()
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 forest_before_np = forest_before.squeeze().cpu().numpy()
-
                 deforested_pixels = np.count_nonzero(mask_np == 1)
-
                 original_forest_pixels = np.count_nonzero(forest_before_np == 1)
 
                 if original_forest_pixels > 0:
@@ -170,6 +184,23 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+
+BRAZIL_REGIONS = {
+    "para_frontier": [-56.00, -8.50, -53.50, -6.00],
+    "acre_frontier": [-68.50, -10.50, -66.50, -9.00],
+}
+
+@app.task
+def scan_brazil_region(region_name="para_frontier", n_lon=3, n_lat=3, lookback_days=30):
+    base_coords = BRAZIL_REGIONS.get(region_name, BRAZIL_REGIONS["para_frontier"])
+    for chunk in chunk_region(base_coords, n_lon, n_lat):
+        scan_region.delay(chunk, lookback_days)
+
+@app.task
+def scan_all_brazil_regions(n_lon=3, n_lat=3, lookback_days=30):#future and not just brazil i decided ill refactor and this will scan more
+    for region_name in BRAZIL_REGIONS:
+        scan_brazil_region.delay(region_name, n_lon, n_lat, lookback_days)
+
 @app.task
 def scan_region(regioncords, lookback_days=30): #region later after i test
     init_earth_engine()
@@ -178,8 +209,8 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     start_date_before = start_date_after - timedelta(days=90)
     is_cloudy = False
 
-    # Rondonia, Brazil
-    coords = [-62.05, -10.05, -62.00, -10.00]
+    #Brazil!
+    coords = regioncords
     roi = ee.Geometry.Rectangle(coords)
 
     s2_collection = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED') # yes i did it twice no i dont care
@@ -220,6 +251,7 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
         ).rename('EVI')
 
         return img.addBands([ndvi ,evi])
+
 
     def get_s1_composite(start, end):
         return (ee.ImageCollection('COPERNICUS/S1_GRD')
