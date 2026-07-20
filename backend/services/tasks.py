@@ -139,7 +139,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 mask_path = f"artifacts/mask_{scan_id}.png"
-                save_mask_png(mask_np, mask_path)
+                save_mask_png(mask_np, mask_path)#ToDO: intergrate this
                 print(f"[{scan_id}] Mask saved to {mask_path}")
 
                 forest_before_np = forest_before.squeeze().cpu().numpy()
