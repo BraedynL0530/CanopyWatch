@@ -89,8 +89,17 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             with rasterio.open(after_tiff) as src:
                 after_img_array= src.read().astype('float32')
 
-            before_img_array = before_img_array / 10000.0 if before_img_array.max() > 255.0 else before_img_array / 255.0
-            after_img_array = after_img_array / 10000.0 if after_img_array.max() > 255.0 else after_img_array / 255.0
+            if before_img_array.max() > 1.0:
+                if before_img_array.max() > 255.0:
+                    before_img_array = before_img_array / 10000.0
+                else:
+                    before_img_array = before_img_array / 255.0
+
+            if after_img_array.max() > 1.0:
+                if after_img_array.max() > 255.0:
+                    after_img_array = after_img_array / 10000.0
+                else:
+                    after_img_array = after_img_array / 255.0
 
             before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
             after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
