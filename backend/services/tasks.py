@@ -100,7 +100,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 total_pixels = mask_np.size
-                deforested_pixels = np.count_nonzero(mask_np > 0.4)
+                deforested_pixels = np.count_nonzero(mask_np >= 0.2) # threshold was messing it up i think
                 damage_percentage = deforested_pixels / total_pixels
 
             ai_response = {
