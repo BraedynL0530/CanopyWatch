@@ -110,12 +110,8 @@ def run_agent_loop(ai_response):
 
         action = msg.get("action")
 
-        if action == "REASON": # likely wont reason more than once but i like it ok?
-            reasoning_steps.append(
-                {
-                    "summary": msg["reasoning"]
-                }
-            )
+        if action == "REASON":
+            reasoning_steps.append(msg["reasoning"])
 
             history.append(
                 {
