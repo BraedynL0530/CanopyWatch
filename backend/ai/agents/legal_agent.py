@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import os
 from groq import Groq
 import time
+import sqlite3
 
 load_dotenv()
 
@@ -20,7 +21,7 @@ OPERATE IN THIS LOOP:
 RULES:
 - You must REASON at least once before PUSH.
 - status must be one of: "Illegal Logging", "Needs Review", "Clear", or "Unknown".
-- damage_percentage: The estimated ratio (0.0 to 1.0) of forest cleared. 
+- damage_percentage: A percentage from 0 to 100 representing forest canopy cleared.
 
 - INTERPRETING LEGALITY (ONLY IF DAMAGE > 0.0):
   * PROTECTED AREAS: If area_status is "PROTECTED", logging is strictly prohibited regardless of permits. Status: "Illegal Logging".
@@ -37,22 +38,24 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 model = "llama-3.1-8b-instant"
 
+DB_PATH = "artifacts/sinaflor.db"
 
 def query_sinaflor_records(lat, lon):
     buffer = 0.008
-    CKAN_API_URL = "https://dadosabertos.ibama.gov.br/api/3/action/datastore_search_sql"
-
-    sql = f"""SELECT SITUACAO_AUTORIZACAO, DT_EMISSAO, DT_VALIDADE 
-              FROM "{SINAFLOR_RESOURCE_ID}" 
-              WHERE LATITUDE BETWEEN {lat - buffer} AND {lat + buffer} 
-              AND LONGITUDE BETWEEN {lon - buffer} AND {lon + buffer}"""
     try:
-        resp = requests.get(CKAN_API_URL, params={'sql': sql}, timeout=10)
-
-        if resp.status_code == 200:
-            return resp.json().get('result', {}).get('records', [])
-        return []
-    except:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM asv_permits
+            WHERE CAST(REPLACE(LATITUDE_EMPREENDIMENTO, ',', '.') AS FLOAT) BETWEEN ? AND ?
+            AND CAST(REPLACE(LONGITUDE_EMPREENDIMENTO, ',', '.') AS FLOAT) BETWEEN ? AND ?
+        """, (lat - buffer, lat + buffer, lon - buffer, lon + buffer))
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"SINAFLOR local query failed: {e}")
         return []
 
 

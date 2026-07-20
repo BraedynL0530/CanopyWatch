@@ -14,6 +14,7 @@ import torch
 import gc
 from backend.ai.models.model import forestClassifier
 import numpy as np
+from PIL import Image
 
 load_dotenv()
 
@@ -26,6 +27,7 @@ SERVICE_ACCOUNT_EMAIL = os.getenv("SERVICE_ACCOUNT_EMAIL")
 KEY_FILE_PATH = os.getenv("KEY_FILE_PATH")
 PROJECT_ID = os.getenv("PROJECT_ID")
 
+#helper funcs
 model = None
 def init_earth_engine():
     try:
@@ -75,7 +77,7 @@ def load_model():
             print("Model loaded successfully")
         except Exception as e:
             print(f"Failed to load model: {e}")
-            raise e # becaues it keeps saying 0,0 damange but model works not over fitted or anything!!!
+            raise e
     return model
 
 def chunk_region(coords, n_lon=4, n_lat=3, overlap_pct=0.1):
@@ -94,6 +96,10 @@ def chunk_region(coords, n_lon=4, n_lat=3, overlap_pct=0.1):
                 min_lat + (j + 1) * lat_step + lat_pad,
             ])
     return chunks
+def save_mask_png(mask_np, path):
+    heat = np.zeros((*mask_np.shape, 4), dtype=np.uint8)
+    heat[mask_np == 1] = [255, 60, 60, 180]  #red where flagged
+    Image.fromarray(heat, mode="RGBA").save(path)
 
 @app.task
 def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
@@ -132,9 +138,14 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 deforestation_mask = (prob_drop >= 0.3).float()
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
+                mask_path = f"artifacts/mask_{scan_id}.png"
+                save_mask_png(mask_np, mask_path)
+                print(f"[{scan_id}] Mask saved to {mask_path}")
+
                 forest_before_np = forest_before.squeeze().cpu().numpy()
                 deforested_pixels = np.count_nonzero(mask_np == 1)
                 original_forest_pixels = np.count_nonzero(forest_before_np == 1)
+
                 print(f"[{scan_id}] prob_drop stats — max: {prob_drop.max():.3f}, "
                       f"mean: {prob_drop.mean():.3f}, "
                       f"pixels 0.15-0.3: {((prob_drop >= 0.15) & (prob_drop < 0.3)).sum().item()}, "
@@ -149,6 +160,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 "lon": lon,
                 "cloudy_img": iscloudy,
                 "damage_percentage": round(damage_percentage * 100, 2),#agent is stupid so i made it clear
+                "mask_url": f"/api/static/mask_{scan_id}.png",
                 "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
                 #raw mask was blowing up tokens
             }
