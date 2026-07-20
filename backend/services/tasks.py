@@ -116,15 +116,22 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 deforestation_mask = torch.clamp(forest_before - forest_after, 0, 1) #clamp prevents tree growth from crashing model
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
-                total_pixels = mask_np.size# math and stuff
+                forest_before_np = forest_before.squeeze().cpu().numpy()
+
                 deforested_pixels = np.count_nonzero(mask_np == 1)
-                damage_percentage = deforested_pixels / total_pixels
+
+                original_forest_pixels = np.count_nonzero(forest_before_np == 1)
+
+                if original_forest_pixels > 0:
+                    damage_percentage = deforested_pixels / original_forest_pixels
+                else:
+                    damage_percentage = 0.0
 
             ai_response = {
                 "lat": lat,
                 "lon": lon,
                 "cloudy_img": iscloudy,
-                "damage_percentage": round(damage_percentage, 4),
+                "damage_percentage": round(damage_percentage * 100, 2),#agent is stupid so i made it clear
                 "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
                 #raw mask was blowing up tokens
             }
