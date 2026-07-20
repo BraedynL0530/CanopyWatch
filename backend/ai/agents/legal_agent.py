@@ -4,6 +4,7 @@ import requests
 from dotenv import load_dotenv
 import os
 from groq import Groq
+import time
 
 load_dotenv()
 
@@ -11,18 +12,20 @@ SYSTEM_PROMPT = """You are the CanopyWatch Legal Verification Agent.
 Your role is to synthesize technical alerts with legal records to issue a final verdict.
 
 OPERATE IN THIS LOOP:
-1. REASON: Analyze the provided AI Confidence, NDVI drop, Event Date, and Sinaflor Permit Status. 
+1. REASON: Analyze the provided data points (damage_percentage, location, date, cloudy_img, and permit_status). 
    Format: {"action": "REASON", "reasoning": "Detailed explanation using the provided data points."}
 2. PUSH: Issue the final verdict.
    Format: {"action": "PUSH", "status": "string", "reasoning": "string"}
 
 RULES:
 - You must REASON at least once before PUSH.
-- status must be one of: "Illegal Logging (Presumed)", "Needs Permit", "Legal", or "Unknown".
-damage_percentage: The estimated ratio (ranging from 0.0 to 1.0) of dense forest pixels within the targeted region that have been cleared or altered between the 'before' and 'after' scans, according to the change-detection model. 
-- 0.0 means zero forest loss detected.
-- 1.0 means 100% of the forest cover in the target area has been removed.- Incorporate specific data points into your reasoning (e.g., 'Confidence: 0.96', 'NDVI delta: 0.3', 'Permit status: No records found').
+- status must be one of: "Illegal Logging", "Needs Review", "Clear", or "Unknown".
+- damage_percentage: The estimated ratio (0.0 to 1.0) of forest cleared. 
+  * 0.0 means ZERO forest loss detected.
+  * 1.0 means 100% of the forest cover removed.
+- CRITICAL: If damage_percentage is 0.0, DO NOT over-analyze. Immediately output PUSH with status "Clear".
 - DO NOT output conversational text. ONLY JSON.
+- CRITICAL: You have 4 steps beyond that you will be forced to PUSH.
 """
 
 Permit_Api = "https://ibama.gov.br"
@@ -80,6 +83,13 @@ def call_llm(messages):
 
 
 def run_agent_loop(ai_response):
+    lat = ai_response.get("lat")
+    lon = ai_response.get("lon")
+    event_date = ai_response.get("date")
+
+    records = query_sinaflor_records(lat, lon)
+    permit_status = get_permit_status(records, event_date)
+    ai_response["permit_status"] = permit_status
     history = [
         {
             "role": "system",
@@ -92,14 +102,17 @@ def run_agent_loop(ai_response):
     ]
 
     reasoning_steps = []
+    max_steps = 5
+    current_step = 0
 
-    while True:
+    while current_step < max_steps:
         result = call_llm(history)
 
         if result["json"] is None:
             raise RuntimeError("LLM returned invalid JSON")
 
         msg = result["json"]
+        action = msg.get("action")
 
         history.append(
             {
@@ -108,10 +121,8 @@ def run_agent_loop(ai_response):
             }
         )
 
-        action = msg.get("action")
-
         if action == "REASON":
-            reasoning_steps.append(msg["reasoning"])
+            reasoning_steps.append(msg.get("reasoning", "Analyzing data..."))
 
             history.append(
                 {
@@ -119,6 +130,11 @@ def run_agent_loop(ai_response):
                     "content": "Continue reasoning or PUSH if ready.",
                 }
             )
+
+            current_step += 1
+
+            if current_step < max_steps: # back off becaue it was spamming groqs api
+                time.sleep(15)
 
             continue
 
