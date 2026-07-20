@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/api/scan")
+@app.get("/api/scan") # no longer used for now since i changed how but it was allways a testing endpoint
 def start_scan(region):
     scan_region.delay(region)
     return {"message": "scan started"}

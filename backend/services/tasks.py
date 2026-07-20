@@ -135,7 +135,10 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 forest_before_np = forest_before.squeeze().cpu().numpy()
                 deforested_pixels = np.count_nonzero(mask_np == 1)
                 original_forest_pixels = np.count_nonzero(forest_before_np == 1)
-
+                print(f"[{scan_id}] prob_drop stats — max: {prob_drop.max():.3f}, "
+                      f"mean: {prob_drop.mean():.3f}, "
+                      f"pixels 0.15-0.3: {((prob_drop >= 0.15) & (prob_drop < 0.3)).sum().item()}, "
+                      f"pixels >=0.3: {(prob_drop >= 0.3).sum().item()}")
                 if original_forest_pixels > 0:
                     damage_percentage = deforested_pixels / original_forest_pixels
                 else:
