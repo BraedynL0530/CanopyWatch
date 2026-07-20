@@ -68,11 +68,16 @@ def generate_tiff_payload(ee_image, coords):
 def load_model():
     global model
     if model is None:
-        model = forestClassifier()
-        weight_path = os.getenv("MODEL_PATH")
-        model.load_state_dict(torch.load(weight_path, map_location="cpu"))
-        model.eval()
+        try:
+            model = forestClassifier()
+            weight_path = os.getenv("MODEL_PATH")
+            model.load_state_dict(torch.load(weight_path, map_location="cpu"))
+            print("Model loaded successfully")
+        except Exception as e:
+            print(f"Failed to load model: {e}")
+            raise e # becaues it keeps saying 0,0 damange but model works not over fitted or anything!!!
     return model
+
 
 @app.task
 def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
