@@ -117,7 +117,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 "id": scan_id,
                 "status": agent_verdict.get("status", "Analyzed"),
                 "reason": agent_verdict.get("final_reasoning", "No significant activity found."),
-                "reasoning":agent_verdict.get("reasoning", "No significant activity found."),
+                "reasoning":agent_verdict.get("reasoning", ["No significant activity found."]),
                 "lat": ai_response["lat"],
                 "lon": ai_response["lon"],
                 "damage_percentage": ai_response["damage_percentage"],
