@@ -93,14 +93,17 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             model = load_model()
             model.eval()
             with torch.no_grad():
-                mask_before = torch.sigmoid(model(before_input_tensor)) # 1 = tree 0 = dirt/building
-                mask_after = torch.sigmoid(model(after_input_tensor))
+                prob_before = torch.sigmoid(model(before_input_tensor))
+                prob_after = torch.sigmoid(model(after_input_tensor))
 
-                deforestation_mask = torch.clamp(mask_before - mask_after, 0, 1)# 0 = no change 1 = deforestation and doesnt allow -1 incase trees grow so trees growing arent false flagged(-1)
+                forest_before = (prob_before >= 0.5).float()
+                forest_after = (prob_after >= 0.5).float() # .5+ confidence is a tree
+
+                deforestation_mask = torch.clamp(forest_before - forest_after, 0, 1) #clamp prevents tree growth from crashing model
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
-                total_pixels = mask_np.size
-                deforested_pixels = np.count_nonzero(mask_np >= 0.2) # threshold was messing it up i think
+                total_pixels = mask_np.size# math and stuff
+                deforested_pixels = np.count_nonzero(mask_np == 1)
                 damage_percentage = deforested_pixels / total_pixels
 
             ai_response = {
@@ -109,7 +112,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 "cloudy_img": iscloudy,
                 "damage_percentage": round(damage_percentage, 4),
                 "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
-                #mask was blowing up tokens
+                #raw mask was blowing up tokens
             }
             agent_verdict = run_agent_loop(ai_response)
 
@@ -271,8 +274,6 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
     ai_image_after = image_after.select(['B4', 'B3', 'B2', 'B8'])
     ai_image_before = image_before.select(['B4', 'B3', 'B2', 'B8'])
 
-    path_before = f"artifacts/before_{scan_id}.tif"
-    path_after = f"artifacts/after_{scan_id}.tif"
     scans = {
         "before": ai_image_before,
         "after": ai_image_after
