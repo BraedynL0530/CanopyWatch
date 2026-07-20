@@ -317,9 +317,9 @@ def seed_historical_data():
     os.makedirs("artifacts", exist_ok=True)
 
     hotspots = [
-        {"name": "Rondonia_Fishbone", "coords": [-62.20, -10.30, -62.10, -10.20]},
-        {"name": "Mato_Grosso_Agri", "coords": [-55.10, -11.50, -55.00, -11.40]},
-        {"name": "Para_Logging", "coords": [-53.50, -5.50, -53.40, -5.40]},
+        {"name": "Rondonia_Fishbone", "coords": [-62.72, -8.54, -62.60, -8.42]},
+        {"name": "Mato_Grosso_Agri", "coords": [-55.15, -11.90, -55.02, -11.78]},
+        {"name": "Para_Logging", "coords": [-55.02, -7.92, -54.88, -7.78]},
     ]
 
     start_before = datetime.datetime(2018, 6, 1, tzinfo=datetime.UTC)
