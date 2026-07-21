@@ -59,7 +59,7 @@ def generate_tiff_payload(ee_image, coords):
             "affineTransform": {
                 "scaleX": (coords[2] - coords[0]) / 512,
                 "translateX": coords[0],
-                "scaleY": (coords[3] - coords[1]) / 512,
+                "scaleY": (coords[1] - coords[3]) / 512,
                 "translateY": coords[3],
                 "shearX": 0,
                 "shearY": 0
@@ -107,21 +107,15 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
     try:
         if os.path.exists(before_tiff) and os.path.exists(after_tiff):
             with rasterio.open(before_tiff) as src:
-                before_img_array= src.read().astype('float32')
+                before_img_array = src.read().astype('float32')
+                before_img_array = np.nan_to_num(before_img_array, nan=0.0)
+
             with rasterio.open(after_tiff) as src:
-                after_img_array= src.read().astype('float32')
+                after_img_array = src.read().astype('float32')
+                after_img_array = np.nan_to_num(after_img_array, nan=0.0)
 
-            if before_img_array.max() > 1.0:
-                if before_img_array.max() > 255.0:
-                    before_img_array = before_img_array / 10000.0
-                else:
-                    before_img_array = before_img_array / 255.0
-
-            if after_img_array.max() > 1.0:
-                if after_img_array.max() > 255.0:
-                    after_img_array = after_img_array / 10000.0
-                else:
-                    after_img_array = after_img_array / 255.0
+            before_img_array = np.clip(before_img_array, 0.0, 1.0)
+            after_img_array = np.clip(after_img_array, 0.0, 1.0)
 
             before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
             after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)

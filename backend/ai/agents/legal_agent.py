@@ -45,7 +45,7 @@ DB_PATH = "/app/artifacts/sinaflor.db"
 
 
 def query_sinaflor_records(lat, lon):
-    buffer = 0.1
+    buffer = 0.02
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
