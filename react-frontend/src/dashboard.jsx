@@ -57,7 +57,8 @@ export default function App() {
           cot: scan.reasoning || [],
           images: {
             before: scan.before_url,
-            after: scan.after_url
+            after: scan.after_url,
+            mask: scan.mask_url
           }
         }));
 
@@ -174,9 +175,16 @@ export default function App() {
         {selectedAlert ? (
           <div className="bg-[#111] border border-[#222] rounded-sm h-[600px] flex flex-col">
             <div className="p-6 border-b border-[#222] flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-white">TARGET: {selectedAlert.id}</h2>
+            <h2 className="text-2xl font-bold text-white">TARGET: {selectedAlert.id}</h2>
+            <div className="flex items-center gap-4">
+              {selectedAlert.damage_percentage != null && (
+                <span className="font-mono text-sm text-[#ff4b4b]">
+                  DAMAGE: {selectedAlert.damage_percentage}%
+                </span>
+              )}
               <span className="font-mono text-sm text-[#888]">LAT: {selectedAlert.lat?.toFixed(4)} | LON: {selectedAlert.lon?.toFixed(4)}</span>
             </div>
+          </div>
 
             {/* TABS */}
             <div className="flex border-b border-[#222]">
@@ -226,6 +234,12 @@ export default function App() {
 
               {activeTab === 'agent' && (
                 <div className="space-y-4">
+                  <div className="text-xs font-mono text-[#ffb84d] bg-[rgba(255,184,77,0.08)] border border-[#ffb84d]/30 rounded-sm p-3">
+                    Permit status reflects IBAMA's ASV (vegetation suppression authorization) registry only — other permit types are not currently checked, and "No records found" means no matching ASV permit was found nearby, not that logging is confirmed illegal.
+                  </div>
+                  {selectedAlert.ndviDrop != null && ( // for later
+                    <p className="font-mono text-xs text-[#888]">NDVI drop: {selectedAlert.ndviDrop}</p>
+                  )}
                   {selectedAlert.cot?.length > 0 ? (
                     selectedAlert.cot.map((log, idx) => <p key={idx} className="font-mono text-sm text-[#aaa] border-l-2 border-[#333] pl-3">{log}</p>)
                   ) : (
@@ -235,22 +249,32 @@ export default function App() {
               )}
 
               {activeTab === 'imagery' && (
-                <div className="grid grid-cols-2 gap-4 h-full">
-                  <div className="flex flex-col">
-                    <span className="font-mono text-xs text-[#888] mb-2 uppercase">Before Scan</span>
-                    {selectedAlert.images?.before ? (
-                      <img src={selectedAlert.images.before} alt="Before" className="rounded border border-[#333] object-cover h-full w-full" />
-                    ) : (
-                      <div className="flex-1 border border-[#333] border-dashed flex items-center justify-center text-[#666] font-mono text-xs">NO IMAGE</div>
-                    )}
+                <div className="flex flex-col h-full gap-3">
+                  <div className="text-xs font-mono text-[#888] bg-[#0a0a0a] border border-[#333] rounded-sm p-3">
+                    Images are contrast-stretched for visibility. The model analyzes raw multispectral reflectance (including near-infrared), which is more sensitive to vegetation change than what's visible here — the highlighted overlay on "After" shows exactly which pixels were flagged as changed.
                   </div>
-                  <div className="flex flex-col">
-                    <span className="font-mono text-xs text-[#888] mb-2 uppercase">After Scan</span>
-                    {selectedAlert.images?.after ? (
-                      <img src={selectedAlert.images.after} alt="After" className="rounded border border-[#333] object-cover h-full w-full" />
-                    ) : (
-                      <div className="flex-1 border border-[#333] border-dashed flex items-center justify-center text-[#666] font-mono text-xs">NO IMAGE</div>
-                    )}
+                  <div className="grid grid-cols-2 gap-4 flex-1">
+                    <div className="flex flex-col">
+                      <span className="font-mono text-xs text-[#888] mb-2 uppercase">Before Scan</span>
+                      {selectedAlert.images?.before ? (
+                        <img src={selectedAlert.images.before} alt="Before" className="rounded border border-[#333] object-cover h-full w-full" />
+                      ) : (
+                        <div className="flex-1 border border-[#333] border-dashed flex items-center justify-center text-[#666] font-mono text-xs">NO IMAGE</div>
+                      )}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-mono text-xs text-[#888] mb-2 uppercase">After Scan (flagged areas highlighted)</span>
+                      {selectedAlert.images?.after ? (
+                        <div className="relative flex-1">
+                          <img src={selectedAlert.images.after} alt="After" className="rounded border border-[#333] object-cover h-full w-full" />
+                          {selectedAlert.images?.mask && (
+                            <img src={selectedAlert.images.mask} alt="Deforestation mask" className="absolute inset-0 rounded object-cover h-full w-full pointer-events-none" />
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex-1 border border-[#333] border-dashed flex items-center justify-center text-[#666] font-mono text-xs">NO IMAGE</div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

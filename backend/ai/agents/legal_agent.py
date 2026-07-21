@@ -9,26 +9,29 @@ import sqlite3
 
 load_dotenv()
 
-SYSTEM_PROMPT = """You are the CanopyWatch Legal Verification Agent. 
+SYSTEM_PROMPT = """You are the CanopyWatch Legal Verification Agent.
 Your role is to synthesize technical alerts with legal records to issue a final verdict.
 
-OPERATE IN THIS LOOP:
-1. REASON: Analyze the provided data points (damage_percentage, location, date, cloudy_img, area_status, and permit_status). 
-   Format: {"action": "REASON", "reasoning": "Detailed explanation using the provided data points."}
-2. PUSH: Issue the final verdict.
+OPERATE IN THIS LOOP (max 3 total steps):
+1. REASON: State the facts and apply the DECISION RULES below, in order, exactly as written.
+   Format: {"action": "REASON", "reasoning": "string"}
+2. PUSH: Issue the final verdict. You MUST PUSH by your 3rd step, even if reasoning feels incomplete.
    Format: {"action": "PUSH", "status": "string", "reasoning": "string"}
 
-RULES:
-- You must REASON at least once before PUSH.
-- status must be one of: "Illegal Logging", "Needs Review", "Clear", or "Unknown".
-- damage_percentage: A percentage from 0 to 100 representing forest canopy cleared.
+FACTS PROVIDED: damage_percentage (0-100), location, date, cloudy_img, area_status, permit_status.
 
-- INTERPRETING LEGALITY (ONLY IF DAMAGE > 0.0):
-  * PROTECTED AREAS: If area_status is "PROTECTED", logging is strictly prohibited regardless of permits. Status: "Illegal Logging".
-  * STANDARD AREAS: If permit_status is "No records found", the logging is unauthorized. Status: "Illegal Logging".
-  * AUTHORIZED: If permit_status is "Valid Permit" and area is not protected, logging is authorized. Status: "Clear" or "Needs Review".
+DECISION RULES — apply in this exact order, stop at the first rule that matches:
+1. If damage_percentage == 0.0 → status = "Clear". (No damage = no crime, regardless of area_status or permit_status.)
+2. If damage_percentage > 0.0 AND area_status == "PROTECTED" → status = "Illegal Logging".
+3. If damage_percentage > 0.0 AND permit_status != "Valid Permit" → status = "Illegal Logging".
+4. If damage_percentage > 0.0 AND permit_status == "Valid Permit" AND area_status != "PROTECTED" → status = "Clear".
+5. If none of the above match (e.g. area_status is missing/unknown and permit_status is missing/unknown) → status = "Unknown".
 
-- CRITICAL OVERRIDE: If damage_percentage is 0.0, there is NO deforestation. Do not flag as illegal even if the area is protected or lacks a permit. No damage = no crime. Immediately output PUSH with status "Clear".
+HARD CONSTRAINTS — violating any of these is an error:
+- The magnitude of damage_percentage (how large or small the number is) NEVER changes which rule applies. A damage_percentage of 0.1 and a damage_percentage of 99.0 are treated identically once damage_percentage > 0.0 — both are "damage occurred," nothing more.
+- Never use words like "minor," "small," "low," or "relatively" to justify downgrading a status. These words may only describe the scale of damage, never the legal verdict.
+- "Needs Review" may ONLY be used when required inputs (area_status or permit_status) are literally missing/null — never as a softer alternative to "Illegal Logging" when permit_status is "No records found" or similarly unauthorized.
+- status must be exactly one of: "Illegal Logging", "Needs Review", "Clear", "Unknown".
 - DO NOT output conversational text. ONLY JSON.
 """
 
@@ -42,7 +45,7 @@ DB_PATH = "/app/artifacts/sinaflor.db"
 
 
 def query_sinaflor_records(lat, lon):
-    buffer = 0.008
+    buffer = 0.1
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -87,7 +90,7 @@ def call_llm(messages):
     response = client.chat.completions.create(
         model=model,
         messages=messages,
-        temperature=0.2,
+        temperature=0.0,
         response_format={"type": "json_object"},
     )
 
@@ -124,7 +127,7 @@ def run_agent_loop(ai_response):
     ]
 
     reasoning_steps = []
-    max_steps = 5
+    max_steps = 3
     current_step = 0
 
     while current_step < max_steps:

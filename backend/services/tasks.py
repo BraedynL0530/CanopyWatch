@@ -132,10 +132,10 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 prob_before = torch.sigmoid(model(before_input_tensor))
                 prob_after = torch.sigmoid(model(after_input_tensor))
 
-                forest_before = (prob_before >= 0.5).float()  # keep this — defines "was this forest at all"
+                forest_before = (prob_before >= 0.6).float()
 
                 prob_drop = (prob_before - prob_after).clamp(min=0)
-                deforestation_mask = (prob_drop >= 0.3).float()
+                deforestation_mask = (prob_drop >= 0.2).float()
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 mask_path = f"artifacts/mask_{scan_id}.png"
@@ -173,6 +173,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 "reasoning":agent_verdict.get("reasoning", ["No significant activity found."]),
                 "lat": ai_response["lat"],
                 "lon": ai_response["lon"],
+                "mask_url": f"/api/static/mask_{scan_id}.png",
                 "damage_percentage": ai_response["damage_percentage"],
                 "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 

@@ -40,6 +40,7 @@ def get_latest_scans():
 
             data["before_url"] = f"/api/static/before_{scan_id}.png"
             data["after_url"] = f"/api/static/after_{scan_id}.png"
+            data["mask_url"] = f"/api/static/mask_{scan_id}.png"
 
             results.append(data)
 
