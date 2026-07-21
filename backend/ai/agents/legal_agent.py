@@ -38,7 +38,8 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 model = "llama-3.1-8b-instant"
 
-DB_PATH = "artifacts/sinaflor.db"
+DB_PATH = "app/artifacts/sinaflor.db"
+
 
 def query_sinaflor_records(lat, lon):
     buffer = 0.008
@@ -48,8 +49,8 @@ def query_sinaflor_records(lat, lon):
         cur = conn.cursor()
         cur.execute("""
             SELECT * FROM asv_permits
-            WHERE CAST(REPLACE(LATITUDE_EMPREENDIMENTO, ',', '.') AS FLOAT) BETWEEN ? AND ?
-            AND CAST(REPLACE(LONGITUDE_EMPREENDIMENTO, ',', '.') AS FLOAT) BETWEEN ? AND ?
+            WHERE CAST(REPLACE(LATITUDE_PONTO_CENTR_EMPREEND, ',', '.') AS FLOAT) BETWEEN ? AND ?
+            AND CAST(REPLACE(LONGITUDE_PONTO_CENTR_EMPREEND, ',', '.') AS FLOAT) BETWEEN ? AND ?
         """, (lat - buffer, lat + buffer, lon - buffer, lon + buffer))
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
@@ -59,23 +60,28 @@ def query_sinaflor_records(lat, lon):
         return []
 
 
+
 def get_permit_status(records, event_date_str):
     if not records:
         return "No records found"
 
     event_dt = datetime.strptime(event_date_str, "%Y-%m-%d")
-    for p in records:
-        status = str(p.get("SITUACAO_AUTORIZACAO", "")).upper()
-        try:
-            start = datetime.strptime(p.get("DT_EMISSAO"), "%d/%m/%Y")
-            end = datetime.strptime(p.get("DT_VALIDADE"), "%d/%m/%Y")
+    VALID_STATUSES = {"EMITIDA", "VALIDA", "DEFERIDO", "AUTORIZADA", "ATIVA"}  # confirm real values below
 
-            if status in ["EMITIDA", "VALIDA", "DEFERIDO", "AUTORIZADA"] and start <= event_dt <= end:
-                return "Valid Permit"
-        except:
+    for p in records:
+        situacao = str(p.get("SITUACAO", "")).upper().strip()
+
+        try:
+            start = datetime.strptime(p.get("DATA_DE_EMISSAO", ""), "%d/%m/%Y")
+            end = datetime.strptime(p.get("DATA_DE_VALIDADE", ""), "%d/%m/%Y")
+        except (ValueError, TypeError) as e:
+            print(f"SINAFLOR date parse failed for {p.get('NRO_AUTORIZACAO')}: {e}")
             continue
 
-    return "No records found"
+        if situacao in VALID_STATUSES and start <= event_dt <= end:
+            return "Valid Permit"
+
+    return "Expired or No Matching Permit"
 
 def call_llm(messages):
     response = client.chat.completions.create(
