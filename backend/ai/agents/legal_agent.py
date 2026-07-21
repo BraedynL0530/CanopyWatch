@@ -44,16 +44,15 @@ model = "llama-3.1-8b-instant"
 DB_PATH = "/app/artifacts/sinaflor.db"
 
 
-def query_sinaflor_records(lat, lon):
-    buffer = 0.02
+def query_sinaflor_records(lat, lon, buffer=0.05):
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("""
             SELECT * FROM asv_permits
-            WHERE CAST(REPLACE(LATITUDE_PONTO_CENTR_EMPREEND, ',', '.') AS FLOAT) BETWEEN ? AND ?
-            AND CAST(REPLACE(LONGITUDE_PONTO_CENTR_EMPREEND, ',', '.') AS FLOAT) BETWEEN ? AND ?
+            WHERE LATITUDE_PONTO_CENTR_EMPREEND BETWEEN ? AND ?
+            AND LONGITUDE_PONTO_CENTR_EMPREEND BETWEEN ? AND ?
         """, (lat - buffer, lat + buffer, lon - buffer, lon + buffer))
         rows = [dict(r) for r in cur.fetchall()]
         conn.close()
