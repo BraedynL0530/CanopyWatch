@@ -38,7 +38,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 model = "llama-3.1-8b-instant"
 
-DB_PATH = "app/artifacts/sinaflor.db"
+DB_PATH = "/app/artifacts/sinaflor.db"
 
 
 def query_sinaflor_records(lat, lon):
