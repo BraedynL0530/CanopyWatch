@@ -109,34 +109,16 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             with rasterio.open(before_tiff) as src:
                 print(src.descriptions)
                 before_img_array = src.read().astype('float32')
-                print("before imgArray read(float32)",before_img_array)
                 before_img_array = np.nan_to_num(before_img_array, nan=0.0)
-                for i in range(src.count):
-                    band = src.read(i + 1)
-                    print("before src",
-                        i + 1,
-                        band.mean(),
-                        band.min(),
-                        band.max()
-                    )
+
 
 
             with rasterio.open(after_tiff) as src:
                 print(src.descriptions)
                 after_img_array = src.read().astype('float32')
-                print("after imgArray read(float32)",after_img_array)
-
                 after_img_array = np.nan_to_num(after_img_array, nan=0.0)
 
-                for i in range(src.count):
-                    band = src.read(i + 1)
-                    print(
-                        "after src",
-                        i + 1,
-                        band.mean(),
-                        band.min(),
-                        band.max()
-                    )
+
 
             before_img_array = np.clip(before_img_array, 0.0, 1.0)
             after_img_array = np.clip(after_img_array, 0.0, 1.0)
@@ -146,6 +128,11 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
             before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
             after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
+
+            diff = np.abs(before_img_array - after_img_array)
+            print("diff mean:",diff.mean())
+            print("diff max:", diff.max())
+            print("diff 99%:", np.quantile(diff, 0.99))
 
             model = load_model()
             model.eval()
@@ -160,13 +147,18 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
                 print("min before", prob_before.min().item())
                 print("min after", prob_after.min().item())
-                forest_before = (prob_before >= 0.6).float()
+                forest_before = (prob_before >= 0.7).float()
 
                 prob_drop = (prob_before - prob_after).clamp(min=0)
                 deforestation_mask = (
-                        (prob_drop >= 0.2) &
-                        (forest_before == 1)
+                        (prob_before >= 0.7) &
+                        ((prob_before - prob_after) >= 0.25)
                 ).float()
+
+                print(
+                    "forest pixels:",
+                    (prob_before >= 0.8).sum().item()
+                )
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 mask_path = f"artifacts/mask_{scan_id}.png"
