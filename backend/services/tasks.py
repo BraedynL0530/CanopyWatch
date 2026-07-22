@@ -118,8 +118,6 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
             print(before_img_array.min())
             print(before_img_array.max())
-            before_img_array = before_img_array / 10000.0
-            after_img_array = after_img_array / 10000.0
 
             before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
             after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
@@ -129,7 +127,8 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             with torch.no_grad():
                 prob_before = torch.sigmoid(model(before_input_tensor))
                 prob_after = torch.sigmoid(model(after_input_tensor))
-
+                print("prob before:",torch.max(prob_before).item())
+                print("prob after:",torch.max(prob_after).item())
                 forest_before = (prob_before >= 0.6).float()
 
                 prob_drop = (prob_before - prob_after).clamp(min=0)
@@ -137,7 +136,7 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 mask_path = f"artifacts/mask_{scan_id}.png"
-                save_mask_png(mask_np, mask_path)#ToDO: intergrate this
+                save_mask_png(mask_np, mask_path)
                 print(f"[{scan_id}] Mask saved to {mask_path}")
 
                 forest_before_np = forest_before.squeeze().cpu().numpy()
@@ -251,7 +250,8 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
                .filterDate(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d'))
                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
                .map(mask_clouds)
-               .median()
+               .sort("CLOUDY_PIXEL_PERCENTAGE")
+               .first()
                .clip(roi))
 
         ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI')
@@ -411,7 +411,8 @@ def seed_historical_data():
             .filterDate(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
             .map(mask_clouds)
-            .median()
+            .sort("CLOUDY_PIXEL_PERCENTAGE")
+            .first()
             .clip(roi)
         )
 
