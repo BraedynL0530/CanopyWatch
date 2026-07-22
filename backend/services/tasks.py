@@ -109,12 +109,28 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             with rasterio.open(before_tiff) as src:
                 print(src.descriptions)
                 before_img_array = src.read().astype('float32')
+                print("before imgArray read(float32)",before_img_array)
                 before_img_array = np.nan_to_num(before_img_array, nan=0.0)
+
 
             with rasterio.open(after_tiff) as src:
                 print(src.descriptions)
                 after_img_array = src.read().astype('float32')
+                print("after imgArray read(float32)",after_img_array)
+
                 after_img_array = np.nan_to_num(after_img_array, nan=0.0)
+
+            for i in range(src.count):
+                band = src.read(i + 1)
+                print(
+                    i + 1,
+                    band.mean(),
+                    band.min(),
+                    band.max()
+                )
+
+            before_img_array = np.clip(before_img_array, 0.0, 1.0)
+            after_img_array = np.clip(after_img_array, 0.0, 1.0)
 
             print(before_img_array.min())
             print(before_img_array.max())
@@ -129,10 +145,19 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 prob_after = torch.sigmoid(model(after_input_tensor))
                 print("prob before:",torch.max(prob_before).item())
                 print("prob after:",torch.max(prob_after).item())
+
+                print("mean before", prob_before.mean().item())
+                print("mean after", prob_after.mean().item())
+
+                print("min before", prob_before.min().item())
+                print("min after", prob_after.min().item())
                 forest_before = (prob_before >= 0.6).float()
 
                 prob_drop = (prob_before - prob_after).clamp(min=0)
-                deforestation_mask = (prob_drop >= 0.2).float()
+                deforestation_mask = (
+                        (prob_drop >= 0.2) &
+                        (forest_before == 1)
+                ).float()
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
                 mask_path = f"artifacts/mask_{scan_id}.png"
