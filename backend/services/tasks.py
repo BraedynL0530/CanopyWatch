@@ -111,6 +111,14 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 before_img_array = src.read().astype('float32')
                 print("before imgArray read(float32)",before_img_array)
                 before_img_array = np.nan_to_num(before_img_array, nan=0.0)
+                for i in range(src.count):
+                    band = src.read(i + 1)
+                    print("before src",
+                        i + 1,
+                        band.mean(),
+                        band.min(),
+                        band.max()
+                    )
 
 
             with rasterio.open(after_tiff) as src:
@@ -120,14 +128,15 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
 
                 after_img_array = np.nan_to_num(after_img_array, nan=0.0)
 
-            for i in range(src.count):
-                band = src.read(i + 1)
-                print(
-                    i + 1,
-                    band.mean(),
-                    band.min(),
-                    band.max()
-                )
+                for i in range(src.count):
+                    band = src.read(i + 1)
+                    print(
+                        "after src",
+                        i + 1,
+                        band.mean(),
+                        band.min(),
+                        band.max()
+                    )
 
             before_img_array = np.clip(before_img_array, 0.0, 1.0)
             after_img_array = np.clip(after_img_array, 0.0, 1.0)
