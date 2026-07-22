@@ -141,11 +141,11 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
             model = load_model()
             model.eval()
             with torch.no_grad():
-                # Get raw logits (pre-sigmoid) – model outputs logits directly
+                # Get raw logits (pre-sigmoid)
                 logit_before = model(before_input_tensor)  # [1,1,512,512]
                 logit_after = model(after_input_tensor)
 
-                # Probabilities for logging
+                # Probabilities for logging only
                 prob_before = torch.sigmoid(logit_before)
                 prob_after = torch.sigmoid(logit_after)
 
@@ -162,44 +162,43 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
                 logit_drop = logit_before_sm - logit_after_sm  # can be negative
 
                 # Thresholds (tune these based on validation)
-                LOGIT_FOREST_THRESH = 0.5   # sigmoid(0.5) ≈ 0.62, less strict than 0.7
-                LOGIT_DROP_THRESH  = 1.0    # sigmoid drop from 0.73 → 0.27 (~0.46 drop)
+                LOGIT_FOREST_THRESH = 0.5   # sigmoid(0.5) ≈ 0.62
+                LOGIT_DROP_THRESH  = 1.0    # logit drop indicates strong vegetation loss
 
-                # Forest mask on before image (using smoothed logits)
-                forest_before = (logit_before_sm > LOGIT_FOREST_THRESH).float()
+                # Forest mask on before image (boolean)
+                forest_before = (logit_before_sm > LOGIT_FOREST_THRESH)
 
-                # Initial deforestation mask (logit drop + forest)
+                # Raw deforestation mask (boolean) – uses logit drop
                 raw_deforestation_mask = (
                     (logit_before_sm > LOGIT_FOREST_THRESH) &
                     (logit_drop > LOGIT_DROP_THRESH)
-                ).float()
+                )
 
-                # NDVI filter: only keep pixels where NDVI drop > 0.1
+                # NDVI filter: boolean tensor, same shape
                 ndvi_filter = torch.from_numpy(ndvi_drop).unsqueeze(0).unsqueeze(0) > 0.1
-                deforestation_mask = raw_deforestation_mask & ndvi_filter.float()
 
-                # Convert mask to numpy for morphological cleanup
+                # Combine with logical AND (both booleans) – no bitwise type error
+                deforestation_mask = raw_deforestation_mask & ndvi_filter  # both boolean
+
+                # Convert to numpy for morphological cleanup
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
-                # Binary opening to remove single-pixel noise
+                # Binary opening removes isolated pixels
                 mask_np = binary_opening(mask_np.astype(bool), structure=np.ones((3,3))).astype(np.float32)
 
-                # Recalculate deforestation mask after cleaning
+                # Convert back to tensor (float) for counting
                 deforestation_mask = torch.from_numpy(mask_np).unsqueeze(0).unsqueeze(0)
 
                 # Count metrics
-                forest_before_np = forest_before.squeeze().cpu().numpy()
-                deforested_pixels = np.count_nonzero(mask_np)
+                forest_before_np = forest_before.squeeze().cpu().numpy().astype(np.float32)
                 original_forest_pixels = np.count_nonzero(forest_before_np)
+                deforested_pixels = np.count_nonzero(mask_np)
 
                 print(f"[{scan_id}] logit drop stats — max: {logit_drop.max():.3f}, "
                       f"mean: {logit_drop.mean():.3f}")
                 print(f"[{scan_id}] forest before px: {original_forest_pixels}, "
                       f"deforested px: {deforested_pixels}")
 
-                if original_forest_pixels > 0:
-                    damage_percentage = deforested_pixels / original_forest_pixels
-                else:
-                    damage_percentage = 0.0
+                damage_percentage = (deforested_pixels / original_forest_pixels) if original_forest_pixels > 0 else 0.0
 
                 # Save mask PNG
                 mask_path = f"artifacts/mask_{scan_id}.png"
