@@ -123,8 +123,10 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             before_img_array = np.clip(before_img_array, 0.0, 1.0)
             after_img_array = np.clip(after_img_array, 0.0, 1.0)
 
-            print(before_img_array.min())
+            print("before img min/max/shape:",before_img_array.min())
             print(before_img_array.max())
+            print(before_img_array.shape)
+
 
             before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
             after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
