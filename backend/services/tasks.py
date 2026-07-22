@@ -156,8 +156,13 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
                 ).float()
 
                 print(
-                    "forest pixels:",
-                    (prob_before >= 0.8).sum().item()
+                    "forest before %",
+                    (prob_before >= 0.8).float().mean().item()
+                )
+
+                print(
+                    "forest after %",
+                    (prob_after >= 0.8).float().mean().item()
                 )
 
                 mask_np = deforestation_mask.squeeze().cpu().numpy()
@@ -496,7 +501,9 @@ def seed_historical_data():
             )
 
         ai_before = image_before.select(["B4", "B3", "B2", "B8"])
+        print("ai img before",ai_before.bandNames().getInfo())
         ai_after = image_after.select(["B4", "B3", "B2", "B8"])
+        print("ai img after",ai_after.bandNames().getInfo())
 
         saved_paths = {}
 
