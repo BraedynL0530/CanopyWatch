@@ -18,7 +18,6 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import binary_opening,binary_closing
 
-
 load_dotenv()
 
 app = Celery('tasks')
@@ -105,9 +104,6 @@ def save_mask_png(mask_np, path):
 def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
     scan_id = os.path.basename(before_tiff).replace("before_", "").replace(".tif", "")
     try:
-        if not (os.path.exists(before_tiff) and os.path.exists(after_tiff)):
-            return {"error": "TIFF files missing"}
-
         with rasterio.open(before_tiff) as src:
             before = src.read().astype('float32')
             before = np.nan_to_num(before, nan=0.0)
@@ -115,47 +111,56 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
             after = src.read().astype('float32')
             after = np.nan_to_num(after, nan=0.0)
 
-        before = np.clip(before, 0, 1)
-        after  = np.clip(after, 0, 1)
+        before = np.clip(before, 0.0, 1.0)
+        after  = np.clip(after, 0.0, 1.0)
 
         model = load_model()
         model.eval()
         with torch.no_grad():
             t_before = torch.from_numpy(before).unsqueeze(0)
-            logit_before = model(t_before)                     # [1,1,512,512]
-            forest_mask = (logit_before > 3.0).float().squeeze().cpu().numpy()
+            t_after  = torch.from_numpy(after).unsqueeze(0)
 
-        diff_bands = after - before                           # [4,512,512]
-        change_mag = np.sqrt(np.sum(diff_bands ** 2, axis=0)) # [512,512]
+            logit_before = model(t_before)
+            logit_after  = model(t_after)
 
-        p95 = np.percentile(change_mag, 95)
-        change_norm = np.clip(change_mag / (p95 + 1e-6), 0, 1)
+            logit_before_sm = F.avg_pool2d(logit_before, kernel_size=3, stride=1, padding=1)
+            logit_after_sm = F.avg_pool2d(logit_after, kernel_size=3, stride=1, padding=1)
 
-        change_mask = (change_norm > 0.4).astype(np.float32)
+            prob_before_sm = torch.sigmoid(logit_before_sm)
+            prob_after_sm = torch.sigmoid(logit_after_sm)
+
+            FOREST_PROB_THRESH = 0.90
+            PROB_DROP_THRESH = 0.20
+
+            forest_mask = (prob_before_sm > FOREST_PROB_THRESH).float()
+            prob_drop = (prob_before_sm - prob_after_sm).clamp(min=0)
+            raw_deforest = (forest_mask > 0) & (prob_drop > PROB_DROP_THRESH)
 
         ndvi_b = (before[3] - before[0]) / (before[3] + before[0] + 1e-6)
         ndvi_a = (after[3] - after[0]) / (after[3] + after[0] + 1e-6)
         ndvi_drop = ndvi_b - ndvi_a
-        ndvi_loss_mask = (ndvi_drop > 0.15).astype(np.float32)   # stronger threshold
+        ndvi_loss = ndvi_drop > 0.15
 
-        raw_deforestation = forest_mask * change_mask * ndvi_loss_mask
+        deforestation_mask = raw_deforest.squeeze().cpu().numpy() & ndvi_loss
 
-        clean = binary_opening(raw_deforestation > 0, structure=np.ones((3,3)))
-        clean = binary_closing(clean, structure=np.ones((3,3)))
-        deforestation_mask = clean.astype(np.float32)
+        deforestation_mask = binary_opening(deforestation_mask, structure=np.ones((3,3)))
+        deforestation_mask = binary_closing(deforestation_mask, structure=np.ones((3,3)))
 
-        forest_pixels = np.count_nonzero(forest_mask)
-        deforested_pixels = np.count_nonzero(deforestation_mask)
-        damage_percentage = (deforested_pixels / forest_pixels * 100) if forest_pixels else 0.0
+        forest_pixels = int(forest_mask.sum().item())
+        deforested_pixels = int(deforestation_mask.sum())
+        damage_percentage = (deforested_pixels / forest_pixels * 100) if forest_pixels > 0 else 0.0
+
+        print(f"[{scan_id}] Forest px: {forest_pixels}  Deforested px: {deforested_pixels}  "
+              f"damage%: {damage_percentage:.2f}  (prob_drop max: {prob_drop.max().item():.3f})")
 
         mask_path = f"artifacts/mask_{scan_id}.png"
-        save_mask_png(deforestation_mask, mask_path)
+        save_mask_png(deforestation_mask.astype(np.float32), mask_path)
 
         ai_response = {
             "lat": lat,
             "lon": lon,
             "cloudy_img": iscloudy,
-            "damage_percentage": round(damage_percentage * 100, 2),
+            "damage_percentage": round(damage_percentage, 2),
             "mask_url": f"/api/static/mask_{scan_id}.png",
             "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
         }
@@ -180,7 +185,6 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
     except Exception as e:
         print(f"Error: {e}")
         raise e
-
     finally:
         if os.path.exists(before_tiff):
             os.remove(before_tiff)
