@@ -107,15 +107,19 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
     try:
         if os.path.exists(before_tiff) and os.path.exists(after_tiff):
             with rasterio.open(before_tiff) as src:
+                print(src.descriptions)
                 before_img_array = src.read().astype('float32')
                 before_img_array = np.nan_to_num(before_img_array, nan=0.0)
 
             with rasterio.open(after_tiff) as src:
+                print(src.descriptions)
                 after_img_array = src.read().astype('float32')
                 after_img_array = np.nan_to_num(after_img_array, nan=0.0)
 
-            before_img_array = np.clip(before_img_array, 0.0, 1.0)
-            after_img_array = np.clip(after_img_array, 0.0, 1.0)
+            print(before_img_array.min())
+            print(before_img_array.max())
+            before_img_array = before_img_array / 10000.0
+            after_img_array = after_img_array / 10000.0
 
             before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
             after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
