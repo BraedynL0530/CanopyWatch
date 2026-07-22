@@ -57,7 +57,7 @@ def generate_tiff_payload(ee_image, coords):
                 "scaleX": (coords[2] - coords[0]) / 512,
                 "translateX": coords[0],
                 "scaleY": -(coords[3] - coords[1]) / 512,
-                "translateY": coords[1],
+                "translateY": coords[3],
                 "shearX": 0,
                 "shearY": 0
             }
