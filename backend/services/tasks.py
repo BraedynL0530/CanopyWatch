@@ -16,7 +16,8 @@ import gc
 from backend.ai.models.model import forestClassifier
 import numpy as np
 from PIL import Image
-from scipy.ndimage import binary_opening
+from scipy.ndimage import binary_opening,binary_closing
+
 
 load_dotenv()
 
@@ -104,135 +105,82 @@ def save_mask_png(mask_np, path):
 def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
     scan_id = os.path.basename(before_tiff).replace("before_", "").replace(".tif", "")
     try:
-        if os.path.exists(before_tiff) and os.path.exists(after_tiff):
-            # Read images
-            with rasterio.open(before_tiff) as src:
-                before_img_array = src.read().astype('float32')
-                before_img_array = np.nan_to_num(before_img_array, nan=0.0)
+        if not (os.path.exists(before_tiff) and os.path.exists(after_tiff)):
+            return {"error": "TIFF files missing"}
 
-            with rasterio.open(after_tiff) as src:
-                after_img_array = src.read().astype('float32')
-                after_img_array = np.nan_to_num(after_img_array, nan=0.0)
+        with rasterio.open(before_tiff) as src:
+            before = src.read().astype('float32')
+            before = np.nan_to_num(before, nan=0.0)
+        with rasterio.open(after_tiff) as src:
+            after = src.read().astype('float32')
+            after = np.nan_to_num(after, nan=0.0)
 
-            before_img_array = np.clip(before_img_array, 0.0, 1.0)
-            after_img_array = np.clip(after_img_array, 0.0, 1.0)
+        before = np.clip(before, 0, 1)
+        after  = np.clip(after, 0, 1)
 
-            # Compute NDVI for additional filtering
-            # Bands: 0: Red (B4), 3: NIR (B8)
-            red_b = before_img_array[0]
-            nir_b = before_img_array[3]
-            ndvi_before = (nir_b - red_b) / (nir_b + red_b + 1e-6)
+        model = load_model()
+        model.eval()
+        with torch.no_grad():
+            t_before = torch.from_numpy(before).unsqueeze(0)
+            logit_before = model(t_before)                     # [1,1,512,512]
+            forest_mask = (logit_before > 3.0).float().squeeze().cpu().numpy()
 
-            red_a = after_img_array[0]
-            nir_a = after_img_array[3]
-            ndvi_after = (nir_a - red_a) / (nir_a + red_a + 1e-6)
-            ndvi_drop = ndvi_before - ndvi_after
+        diff_bands = after - before                           # [4,512,512]
+        change_mag = np.sqrt(np.sum(diff_bands ** 2, axis=0)) # [512,512]
 
-            # Convert to tensors
-            before_input_tensor = torch.from_numpy(before_img_array).unsqueeze(0)
-            after_input_tensor = torch.from_numpy(after_img_array).unsqueeze(0)
+        p95 = np.percentile(change_mag, 95)
+        change_norm = np.clip(change_mag / (p95 + 1e-6), 0, 1)
 
-            # Logging raw pixel differences
-            diff = np.abs(before_img_array - after_img_array)
-            print("diff mean:", diff.mean())
-            print("diff max:", diff.max())
-            print("diff 99%:", np.quantile(diff, 0.99))
+        change_mask = (change_norm > 0.4).astype(np.float32)
 
-            model = load_model()
-            model.eval()
-            with torch.no_grad():
-                # Get raw logits (pre-sigmoid)
-                logit_before = model(before_input_tensor)  # [1,1,512,512]
-                logit_after = model(after_input_tensor)
+        ndvi_b = (before[3] - before[0]) / (before[3] + before[0] + 1e-6)
+        ndvi_a = (after[3] - after[0]) / (after[3] + after[0] + 1e-6)
+        ndvi_drop = ndvi_b - ndvi_a
+        ndvi_loss_mask = (ndvi_drop > 0.15).astype(np.float32)   # stronger threshold
 
-                # Probabilities for logging only
-                prob_before = torch.sigmoid(logit_before)
-                prob_after = torch.sigmoid(logit_after)
+        raw_deforestation = forest_mask * change_mask * ndvi_loss_mask
 
-                print("logit before max:", logit_before.max().item())
-                print("logit after max:", logit_after.max().item())
-                print("mean before prob:", prob_before.mean().item())
-                print("mean after prob:", prob_after.mean().item())
+        clean = binary_opening(raw_deforestation > 0, structure=np.ones((3,3)))
+        clean = binary_closing(clean, structure=np.ones((3,3)))
+        deforestation_mask = clean.astype(np.float32)
 
-                # ---------- Spatial smoothing on logits ----------
-                logit_before_sm = F.avg_pool2d(logit_before, kernel_size=3, stride=1, padding=1)
-                logit_after_sm = F.avg_pool2d(logit_after, kernel_size=3, stride=1, padding=1)
+        forest_pixels = np.count_nonzero(forest_mask)
+        deforested_pixels = np.count_nonzero(deforestation_mask)
+        damage_percentage = (deforested_pixels / forest_pixels * 100) if forest_pixels else 0.0
 
-                # Compute logit drop
-                logit_drop = logit_before_sm - logit_after_sm  # can be negative
+        mask_path = f"artifacts/mask_{scan_id}.png"
+        save_mask_png(deforestation_mask, mask_path)
 
-                # Thresholds (tune these based on validation)
-                LOGIT_FOREST_THRESH = 0.5   # sigmoid(0.5) ≈ 0.62
-                LOGIT_DROP_THRESH  = 1.0    # logit drop indicates strong vegetation loss
+        ai_response = {
+            "lat": lat,
+            "lon": lon,
+            "cloudy_img": iscloudy,
+            "damage_percentage": round(damage_percentage * 100, 2),
+            "mask_url": f"/api/static/mask_{scan_id}.png",
+            "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
+        }
+        agent_verdict = run_agent_loop(ai_response)
 
-                # Forest mask on before image (boolean)
-                forest_before = (logit_before_sm > LOGIT_FOREST_THRESH)
+        final_result = {
+            "id": scan_id,
+            "status": agent_verdict.get("status", "Analyzed"),
+            "reason": agent_verdict.get("final_reasoning", "No significant activity found."),
+            "reasoning": agent_verdict.get("reasoning", ["No significant activity found."]),
+            "lat": ai_response["lat"],
+            "lon": ai_response["lon"],
+            "mask_url": f"/api/static/mask_{scan_id}.png",
+            "damage_percentage": ai_response["damage_percentage"],
+            "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+        }
 
-                # Raw deforestation mask (boolean) – uses logit drop
-                raw_deforestation_mask = (
-                    (logit_before_sm > LOGIT_FOREST_THRESH) &
-                    (logit_drop > LOGIT_DROP_THRESH)
-                )
-
-                # NDVI filter: boolean tensor, same shape
-                ndvi_filter = torch.from_numpy(ndvi_drop).unsqueeze(0).unsqueeze(0) > 0.1
-
-                # Combine with logical AND (both booleans) – no bitwise type error
-                deforestation_mask = raw_deforestation_mask & ndvi_filter  # both boolean
-
-                # Convert to numpy for morphological cleanup
-                mask_np = deforestation_mask.squeeze().cpu().numpy()
-                # Binary opening removes isolated pixels
-                mask_np = binary_opening(mask_np.astype(bool), structure=np.ones((3,3))).astype(np.float32)
-
-                # Convert back to tensor (float) for counting
-                deforestation_mask = torch.from_numpy(mask_np).unsqueeze(0).unsqueeze(0)
-
-                # Count metrics
-                forest_before_np = forest_before.squeeze().cpu().numpy().astype(np.float32)
-                original_forest_pixels = np.count_nonzero(forest_before_np)
-                deforested_pixels = np.count_nonzero(mask_np)
-
-                print(f"[{scan_id}] logit drop stats — max: {logit_drop.max():.3f}, "
-                      f"mean: {logit_drop.mean():.3f}")
-                print(f"[{scan_id}] forest before px: {original_forest_pixels}, "
-                      f"deforested px: {deforested_pixels}")
-
-                damage_percentage = (deforested_pixels / original_forest_pixels) if original_forest_pixels > 0 else 0.0
-
-                # Save mask PNG
-                mask_path = f"artifacts/mask_{scan_id}.png"
-                save_mask_png(mask_np, mask_path)
-
-            ai_response = {
-                "lat": lat,
-                "lon": lon,
-                "cloudy_img": iscloudy,
-                "damage_percentage": round(damage_percentage * 100, 2),
-                "mask_url": f"/api/static/mask_{scan_id}.png",
-                "date": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
-            }
-            agent_verdict = run_agent_loop(ai_response)
-
-            final_result = {
-                "id": scan_id,
-                "status": agent_verdict.get("status", "Analyzed"),
-                "reason": agent_verdict.get("final_reasoning", "No significant activity found."),
-                "reasoning": agent_verdict.get("reasoning", ["No significant activity found."]),
-                "lat": ai_response["lat"],
-                "lon": ai_response["lon"],
-                "mask_url": f"/api/static/mask_{scan_id}.png",
-                "damage_percentage": ai_response["damage_percentage"],
-                "timestamp": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
-            }
-
-            with open(f"artifacts/result_{scan_id}.json", "w") as f:
-                json.dump(final_result, f)
-            return ai_response
+        with open(f"artifacts/result_{scan_id}.json", "w") as f:
+            json.dump(final_result, f)
+        return ai_response
 
     except Exception as e:
         print(f"Error: {e}")
         raise e
+
     finally:
         if os.path.exists(before_tiff):
             os.remove(before_tiff)
