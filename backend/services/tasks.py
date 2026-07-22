@@ -59,8 +59,8 @@ def generate_tiff_payload(ee_image, coords):
             "affineTransform": {
                 "scaleX": (coords[2] - coords[0]) / 512,
                 "translateX": coords[0],
-                "scaleY": (coords[1] - coords[3]) / 512,
-                "translateY": coords[3],
+                "scaleY": -(coords[3] - coords[1]) / 512,
+                "translateY": coords[1],
                 "shearX": 0,
                 "shearY": 0
             }
@@ -139,6 +139,8 @@ def ML_output(before_tiff,after_tiff, iscloudy,lat,lon):#tiffs are paths
             with torch.no_grad():
                 prob_before = torch.sigmoid(model(before_input_tensor))
                 prob_after = torch.sigmoid(model(after_input_tensor))
+                print("before shape:",prob_before.shape)
+                print("after shape:",prob_after.shape)
                 print("prob before:",torch.max(prob_before).item())
                 print("prob after:",torch.max(prob_after).item())
 
@@ -281,8 +283,7 @@ def scan_region(regioncords, lookback_days=30): #region later after i test
                .filterDate(start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d'))
                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
                .map(mask_clouds)
-               .sort("CLOUDY_PIXEL_PERCENTAGE")
-               .first()
+               .median()
                .clip(roi))
 
         ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI')
@@ -442,8 +443,7 @@ def seed_historical_data():
             .filterDate(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
             .map(mask_clouds)
-            .sort("CLOUDY_PIXEL_PERCENTAGE")
-            .first()
+            .median()
             .clip(roi)
         )
 
