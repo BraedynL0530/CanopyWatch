@@ -129,8 +129,9 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
             prob_before_sm = torch.sigmoid(logit_before_sm)
             prob_after_sm = torch.sigmoid(logit_after_sm)
 
-            FOREST_PROB_THRESH = 0.90
-            PROB_DROP_THRESH = 0.20
+            FOREST_PROB_THRESH = 0.75
+            PROB_DROP_THRESH = 0.10
+            NDVI_DROP_THRESH = 0.05
 
             forest_mask = (prob_before_sm > FOREST_PROB_THRESH).float()
             prob_drop = (prob_before_sm - prob_after_sm).clamp(min=0)
@@ -139,12 +140,12 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
         ndvi_b = (before[3] - before[0]) / (before[3] + before[0] + 1e-6)
         ndvi_a = (after[3] - after[0]) / (after[3] + after[0] + 1e-6)
         ndvi_drop = ndvi_b - ndvi_a
-        ndvi_loss = ndvi_drop > 0.15
+        ndvi_loss = ndvi_drop > NDVI_DROP_THRESH
 
         deforestation_mask = raw_deforest.squeeze().cpu().numpy() & ndvi_loss
 
-        deforestation_mask = binary_opening(deforestation_mask, structure=np.ones((3,3)))
-        deforestation_mask = binary_closing(deforestation_mask, structure=np.ones((3,3)))
+        deforestation_mask = binary_opening(deforestation_mask, structure=np.ones((3, 3)))
+        deforestation_mask = binary_closing(deforestation_mask, structure=np.ones((5, 5)), iterations=2)
 
         forest_pixels = int(forest_mask.sum().item())
         deforested_pixels = int(deforestation_mask.sum())
