@@ -16,7 +16,7 @@ import gc
 from backend.ai.models.model import forestClassifier
 import numpy as np
 from PIL import Image
-from scipy.ndimage import binary_opening,binary_closing
+from scipy.ndimage import binary_opening,binary_closing,binary_fill_holes
 
 load_dotenv()
 
@@ -130,8 +130,8 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
             prob_after_sm = torch.sigmoid(logit_after_sm)
 
             FOREST_PROB_THRESH = 0.75
-            PROB_DROP_THRESH = 0.10
-            NDVI_DROP_THRESH = 0.05
+            PROB_DROP_THRESH = 0.05
+            NDVI_DROP_THRESH = 0.03
 
             forest_mask = (prob_before_sm > FOREST_PROB_THRESH).float()
             prob_drop = (prob_before_sm - prob_after_sm).clamp(min=0)
@@ -146,12 +146,14 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
 
         deforestation_mask = binary_opening(deforestation_mask, structure=np.ones((3, 3)))
         deforestation_mask = binary_closing(deforestation_mask, structure=np.ones((5, 5)), iterations=2)
+        filled_mask = binary_fill_holes(deforestation_mask)
+        newly_filled = filled_mask & ~deforestation_mask
 
         forest_pixels = int(forest_mask.sum().item())
         deforested_pixels = int(deforestation_mask.sum())
         damage_percentage = (deforested_pixels / forest_pixels * 100) if forest_pixels > 0 else 0.0
 
-        print(f"[{scan_id}] Forest px: {forest_pixels}  Deforested px: {deforested_pixels}  "
+        print(f"[{scan_id}] Forest px: {forest_pixels} Newly Filled:{newly_filled.sum()}  Deforested px: {deforested_pixels}  "#if it seems reasonanble in prod ill plug it in fr
               f"damage%: {damage_percentage:.2f}  (prob_drop max: {prob_drop.max().item():.3f})")
 
         mask_path = f"artifacts/mask_{scan_id}.png"
