@@ -118,10 +118,10 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
         model.eval()
         with torch.no_grad():
             t_before = torch.from_numpy(before).unsqueeze(0)
-            t_after  = torch.from_numpy(after).unsqueeze(0)
+            t_after = torch.from_numpy(after).unsqueeze(0)
 
             logit_before = model(t_before)
-            logit_after  = model(t_after)
+            logit_after = model(t_after)
 
             logit_before_sm = F.avg_pool2d(logit_before, kernel_size=3, stride=1, padding=1)
             logit_after_sm = F.avg_pool2d(logit_after, kernel_size=3, stride=1, padding=1)
@@ -135,14 +135,21 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
 
             forest_mask = (prob_before_sm > FOREST_PROB_THRESH).float()
             prob_drop = (prob_before_sm - prob_after_sm).clamp(min=0)
-            raw_deforest = (forest_mask > 0) & (prob_drop > PROB_DROP_THRESH)
+
+            prob_score = (prob_drop / (PROB_DROP_THRESH * 2)).clamp(0, 1)
 
         ndvi_b = (before[3] - before[0]) / (before[3] + before[0] + 1e-6)
         ndvi_a = (after[3] - after[0]) / (after[3] + after[0] + 1e-6)
         ndvi_drop = ndvi_b - ndvi_a
-        ndvi_loss = ndvi_drop > NDVI_DROP_THRESH
 
-        deforestation_mask = raw_deforest.squeeze().cpu().numpy() & ndvi_loss
+        ndvi_drop_tensor = torch.from_numpy(ndvi_drop).unsqueeze(0).unsqueeze(0)
+        ndvi_score = (ndvi_drop_tensor / (NDVI_DROP_THRESH * 2)).clamp(0, 1)
+
+        combined_score = (prob_score + ndvi_score) / 2.0
+        FUSION_THRESH = 0.5
+        raw_deforest = (forest_mask > 0) & (combined_score > FUSION_THRESH)
+
+        deforestation_mask = raw_deforest.squeeze().cpu().numpy()
 
         deforestation_mask = binary_opening(deforestation_mask, structure=np.ones((3, 3)))
         deforestation_mask = binary_closing(deforestation_mask, structure=np.ones((5, 5)), iterations=2)
