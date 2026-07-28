@@ -24,3 +24,12 @@ to generate the deforestation mask which was exported as a png and layered over 
 which deems legality, using the IBMA dataset and data mentioned previously, it outputs its illegal or not and how bad deforestation with 4 classes: Clear, Needs Review, Illegal Logging(again potentially) and Unknown.
 After all of that its pushed to frontend via RestAPI(fastApi/nginx powered) and that's the dashboard.
 this is all dockerized for nginx server, backend, frontend, and Docker Compose to manage/define all the other containers.
+
+## 🐳 Running with Docker
+
+To spin up the entire architecture locally be sure to configure your .env and install the JSON key from google earth engine:
+
+```bash
+git clone [https://github.com/BraedynL0530/CanopyWatch.git](https://github.com/BraedynL0530/CanopyWatch.git)
+cd CanopyWatch
+docker-compose up --build```
