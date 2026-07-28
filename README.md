@@ -25,11 +25,3 @@ which deems legality, using the IBMA dataset and data mentioned previously, it o
 After all of that its pushed to frontend via RestAPI(fastApi/nginx powered) and that's the dashboard.
 this is all dockerized for nginx server, backend, frontend, and Docker Compose to manage/define all the other containers.
 
-## 🐳 Running with Docker
-
-To spin up the entire architecture locally be sure to configure your .env and install the JSON key from google earth engine:
-
-```bash
-git clone [https://github.com/BraedynL0530/CanopyWatch.git](https://github.com/BraedynL0530/CanopyWatch.git)
-cd CanopyWatch
-docker-compose up --build```
