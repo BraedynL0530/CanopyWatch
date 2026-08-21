@@ -57,7 +57,7 @@ Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-model = "llama-3.1-8b-instant"
+model = "openai/gpt-oss-20b"
 
 DB_PATH = "/app/artifacts/sinaflor.db"
 
