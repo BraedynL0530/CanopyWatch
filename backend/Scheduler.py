@@ -1,5 +1,4 @@
-from services.tasks import app, scan_brazil_region
-
+from backend.services.tasks import app, scan_brazil_region
 @app.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):
     sender.add_periodic_task(
