@@ -1,5 +1,5 @@
 import json
-
+from  backend import Scheduler
 from fastapi import FastAPI, Response, status
 from dotenv import load_dotenv
 from backend.services.tasks import scan_region,seed_historical_data

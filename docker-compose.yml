@@ -43,6 +43,21 @@ services:
     depends_on:
       - redis
 
+  beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: celery -A backend.services.tasks beat --loglevel=info
+    environment:
+      - REDIS_BROKER_URL=redis://redis:6379/0
+      - REDIS_BACKEND_URL=redis://redis:6379/1
+    env_file:
+      - .env
+    volumes:
+      - shared_artifacts:/app/artifacts
+    depends_on:
+      - redis
+
   # Redis
   redis:
     image: redis:alpine
