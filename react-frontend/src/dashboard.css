@@ -143,3 +143,11 @@ button { font: inherit; }
 @media (max-width: 900px) {
   .notebook-shell { overflow: auto; }
 }
+.journal-tabs {
+  z-index: 2000;
+}
+
+.journal-tabs button {
+  position: relative;
+  z-index: 2001;
+}
