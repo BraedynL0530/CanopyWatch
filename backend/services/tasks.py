@@ -146,7 +146,7 @@ def ML_output(before_tiff, after_tiff, iscloudy, lat, lon):
         ndvi_score = (ndvi_drop_tensor / (NDVI_DROP_THRESH * 2)).clamp(0, 1)
 
         combined_score = (prob_score + ndvi_score) / 2.0
-        FUSION_THRESH = 0.4
+        FUSION_THRESH = 0.5
         raw_deforest = (forest_mask > 0) & (combined_score > FUSION_THRESH)
 
         deforestation_mask = raw_deforest.squeeze().cpu().numpy()
