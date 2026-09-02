@@ -12,13 +12,6 @@ load_dotenv()
 SYSTEM_PROMPT = """You are the CanopyWatch Legal Verification Agent.
 Your role is to synthesize technical alerts with legal records to issue a final verdict.
 
-OPERATE IN THIS LOOP (max 3 total steps):
-1. REASON: Apply the DECISION RULES below, in order, exactly as written — then explain your reasoning
-   like a field analyst writing a case note, not by restating the rule's variable names.
-   Format: {"action": "REASON", "reasoning": "string"}
-2. PUSH: Issue the final verdict. You MUST PUSH by your 3rd step, even if reasoning feels incomplete.
-   Format: {"action": "PUSH", "status": "string", "reasoning": "string"}
-
 FACTS PROVIDED: damage_percentage (0-100), location, date, cloudy_img, area_status, permit_status.
 
 DECISION RULES — apply in this exact order, stop at the first rule that matches. The MATCHED RULE always
@@ -50,8 +43,33 @@ HARD CONSTRAINTS — violating any of these is an error:
   missing/null — never as a softer alternative to "Illegal Logging" when permit_status is "No records found"
   or similarly unauthorized.
 - status must be exactly one of: "Illegal Logging", "Needs Review", "Clear", "Unknown".
-- DO NOT output conversational text outside the JSON structure. ONLY JSON.
+- Respond with a single JSON object: {"status": "string", "reasoning": "string"}. ONLY JSON, no other text.
 """
+
+def run_agent_loop(ai_response):
+    lat = ai_response.get("lat")
+    lon = ai_response.get("lon")
+    event_date = ai_response.get("date")
+
+    records = query_sinaflor_records(lat, lon)
+    permit_status = get_permit_status(records, event_date)
+    ai_response["permit_status"] = permit_status
+
+    result = call_llm([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": json.dumps(ai_response)},
+    ])
+
+    if result["json"] is None:
+        raise RuntimeError("LLM returned invalid JSON")
+
+    msg = result["json"]
+
+    return {
+        "status": msg["status"],
+        "reasoning": [],
+        "final_reasoning": msg["reasoning"],
+    }
 
 Permit_Api = "https://ibama.gov.br"
 SINAFLOR_RESOURCE_ID = os.getenv("SINAFLOR_RESOURCE_ID")
@@ -124,7 +142,8 @@ def call_llm(messages):
     }
 
 
-def run_agent_loop(ai_response):
+
+def run_agent_loop(ai_response): #over engineered ts anyways its not that hard to reason with allthat info,
     lat = ai_response.get("lat")
     lon = ai_response.get("lon")
     event_date = ai_response.get("date")
@@ -132,59 +151,21 @@ def run_agent_loop(ai_response):
     records = query_sinaflor_records(lat, lon)
     permit_status = get_permit_status(records, event_date)
     ai_response["permit_status"] = permit_status
-    history = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT,
-        },
-        {
-            "role": "user",
-            "content": json.dumps(ai_response),
-        },
-    ]
 
-    reasoning_steps = []
-    max_steps = 3
-    current_step = 0
+    result = call_llm([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": json.dumps(ai_response)},
+    ])
 
-    while current_step < max_steps:
-        result = call_llm(history)
+    if result["json"] is None:
+        raise RuntimeError("LLM returned invalid JSON")
 
-        if result["json"] is None:
-            raise RuntimeError("LLM returned invalid JSON")
+    msg = result["json"]
 
-        msg = result["json"]
-        action = msg.get("action")
-
-        history.append(
-            {
-                "role": "assistant",
-                "content": json.dumps(msg),
-            }
-        )
-
-        if action == "REASON":
-            reasoning_steps.append(msg.get("reasoning", "Analyzing data..."))
-
-            history.append(
-                {
-                    "role": "user",
-                    "content": "Continue reasoning or PUSH if ready.",
-                }
-            )
-
-            current_step += 1
-
-            if current_step < max_steps: # back off becaue it was spamming groqs api
-                time.sleep(15)
-
-            continue
-
-        if action == "PUSH":
-            return {
-                "status": msg["status"],
-                "reasoning": reasoning_steps,
-                "final_reasoning": msg["reasoning"],
-            }
-
-        raise RuntimeError(f"Unknown action: {action}")
+    return {
+        "status": msg["status"],
+        "reasoning": [],
+        "final_reasoning": msg["reasoning"],
+    }
+# ill add this to alerting when i feel like it.
+#removed ai code and re did it.
