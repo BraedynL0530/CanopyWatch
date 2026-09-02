@@ -3,6 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
+//REMOVED MOST AI CSS AND JS i wrote some some i didnt either way less than 30% total and i like the look of it
+
 const TABS = ["map", "imagery", "reasoning"];
 
 const createCustomIcon = (color) =>
@@ -122,7 +124,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div style={{ padding: 24, fontFamily: "sans-serif", color: "#333" }}>
+      <div style={{ padding: 24, fontFamily: "sans-serif", color: "#000000" }}>
         Loading...
       </div>
     );
@@ -145,7 +147,7 @@ export default function App() {
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <div style={{ width: 260, borderRight: "1px solid #ccc", overflowY: "auto" }}>
           <div style={{ padding: "8px 12px", fontSize: 12, color: "#000000", borderBottom: "1px solid #eee" }}>
-             Incidents
+             locations
           </div>
           {alerts.length === 0 ? (
             <div style={{ padding: 12, fontSize: 13, color: "#000000" }}>
@@ -198,10 +200,9 @@ export default function App() {
                     style={{
                       padding: "8px 16px",
                       border: "none",
-                      borderBottom: tab === t ? "2px solid #333" : "2px solid transparent",
-                      background: "none",
+                      background: tab === t ? "none" : "grey",
                       cursor: "pointer",
-                      fontWeight: tab === t ? 600 : 400,
+                      fontWeight: 600,
                       textTransform: "capitalize",
                     }}
                   >
@@ -223,7 +224,7 @@ export default function App() {
                           {src ? (
                             <img src={src} alt={label} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                           ) : (
-                            <span style={{ fontSize: 12, color: "#999" }}>No image data</span>
+                            <span style={{ fontSize: 12, color: "#000000" }}>No image data</span>
                           )}
                           {key === "after" && selected.images.mask && (
                             <img src={selected.images.mask} alt="mask" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: 0.8 }} />
@@ -247,7 +248,7 @@ export default function App() {
                         ))}
                       </MapContainer>
                     ) : (
-                      <div style={{ padding: 16, fontSize: 13, color: "#999" }}>coors not found </div>
+                      <div style={{ padding: 16, fontSize: 13, color: "#000000" }}>coors not found </div>
                     )}
                   </div>
                 )}
@@ -257,7 +258,7 @@ export default function App() {
                     {selected.reason ? (
                       <p style={{ fontSize: 14, lineHeight: 1.6 }}>{selected.reason}</p>
                     ) : (
-                      <p style={{ fontSize: 13, color: "#999" }}>no reasoning data.</p>
+                      <p style={{ fontSize: 13, color: "#000000" }}>no reasoning data.</p>
                     )}
                     {selected.ndvi != null && (
                       <p style={{ fontSize: 12, color: "#000000", marginTop: 12 }}>NDVI drop: {selected.ndvi}</p>
