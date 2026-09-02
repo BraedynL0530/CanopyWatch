@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
-const TABS = ["map", "images", "reasoning"];
+const TABS = ["map", "imagery", "reasoning"];
 
 const createCustomIcon = (color) =>
   L.divIcon({
@@ -20,6 +20,7 @@ const alertIcon = createCustomIcon("#b91c1c");
 function MapUpdater({ lat, lon }) {
   const map = useMap();
   useEffect(() => {
+    map.invalidateSize();
     if (Number.isFinite(lat) && Number.isFinite(lon)) {
       map.setView([lat, lon], 14);
     }
@@ -44,14 +45,12 @@ function normalizeScan(scan, index) {
     damage_percentage: scan.damage_percentage == null ? null : Number(scan.damage_percentage),
     status,
     reason: scan.reason || "",
-    reasoning: normalizeReasoning(scan.reasoning),
     ndvi: scan.ndvi_drop == null ? null : scan.ndvi_drop,
     images: {
       before: scan.before_url || null,
       after: scan.after_url || null,
       mask: scan.mask_url || null,
     },
-    page: index + 1,
   };
 }
 
@@ -99,10 +98,10 @@ export default function App() {
     [alerts, selectedId]
   );
 
-  const statusColor = (status) => {
-    if (status === "Illegal Logging" || status === "Illegal") return "#b91c1c";
-    if (status === "Needs Review") return "#a16207";
-    return "#15803d";
+  const statusColor = (status) => { // trafic light yay
+    if (status === "Illegal Logging" || status === "Illegal") return "#ff0000";
+    if (status === "Needs Review") return "#fff200";
+    return "#00ff61";
   };
 
   const getIconForStatus = (alert) => {
@@ -145,11 +144,11 @@ export default function App() {
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         <div style={{ width: 260, borderRight: "1px solid #ccc", overflowY: "auto" }}>
-          <div style={{ padding: "8px 12px", fontSize: 12, color: "#666", borderBottom: "1px solid #eee" }}>
+          <div style={{ padding: "8px 12px", fontSize: 12, color: "#000000", borderBottom: "1px solid #eee" }}>
              Incidents
           </div>
           {alerts.length === 0 ? (
-            <div style={{ padding: 12, fontSize: 13, color: "#888" }}>
+            <div style={{ padding: 12, fontSize: 13, color: "#000000" }}>
               {fetchError ? "Couldnt load scans." : "no scans rn."}
             </div>
           ) : (
@@ -170,7 +169,6 @@ export default function App() {
               >
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{e.id}</div>
                 <div style={{ fontSize: 12, color: statusColor(e.status) }}>{e.status}</div>
-                <div style={{ fontSize: 11, color: "#999" }}>p.{e.page}</div>
               </button>
             ))
           )}
@@ -182,7 +180,7 @@ export default function App() {
               <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #ccc" }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 16 }}>{selected.id}</div>
-                  <div style={{ fontSize: 13, color: "#555" }}>
+                  <div style={{ fontSize: 13, color: "#000000" }}>
                     lat {selected.lat?.toFixed(4)} · lon {selected.lon?.toFixed(4)}
                   </div>
                 </div>
@@ -220,7 +218,7 @@ export default function App() {
                       { key: "after", label: "After (overlay)", src: selected.images.after },
                     ].map(({ key, label, src }) => (
                       <div key={key} style={{ display: "flex", flexDirection: "column" }}>
-                        <span style={{ fontSize: 12, color: "#666", marginBottom: 4 }}>{label}</span>
+                        <span style={{ fontSize: 12, color: "#000000", marginBottom: 4 }}>{label}</span>
                         <div style={{ position: "relative", flex: 1, border: "1px solid #ccc", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f5" }}>
                           {src ? (
                             <img src={src} alt={label} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
@@ -256,33 +254,21 @@ export default function App() {
 
                 {tab === "reasoning" && (
                   <div>
-                    {selected.reason && <p style={{ fontSize: 14, lineHeight: 1.6 }}>{selected.reason}</p>}
-                    {selected.reasoning.length > 0 && (
-                      <div style={{ marginTop: 16 }}>
-                        <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>agent log</div>
-                        {selected.reasoning.map((log, idx) => (
-                          <p key={idx} style={{ fontSize: 13, lineHeight: 1.5, borderLeft: "2px solid #ccc", paddingLeft: 10, marginBottom: 8 }}>
-                            {log}
-                          </p>
-                        ))}
-                      </div>
+                    {selected.reason ? (
+                      <p style={{ fontSize: 14, lineHeight: 1.6 }}>{selected.reason}</p>
+                    ) : (
+                      <p style={{ fontSize: 13, color: "#999" }}>no reasoning data.</p>
                     )}
                     {selected.ndvi != null && (
-                      <p style={{ fontSize: 12, color: "#666", marginTop: 12 }}>NDVI drop: {selected.ndvi}</p>
-                    )}
-                    {!selected.reason && selected.reasoning.length === 0 && (
-                      <p style={{ fontSize: 13, color: "#999" }}>No reasoning data available.</p>
+                      <p style={{ fontSize: 12, color: "#000000", marginTop: 12 }}>NDVI drop: {selected.ndvi}</p>
                     )}
                   </div>
                 )}
               </div>
 
-              <div style={{ textAlign: "center", padding: 8, fontSize: 12, color: "#999" }}>
-                — {selected.page} —
-              </div>
             </>
           ) : (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#999" }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#000000" }}>
               {fetchError || "no scan data."}
             </div>
           )}
