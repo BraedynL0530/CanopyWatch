@@ -2,9 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-
-//REMOVED MOST AI CSS AND JS i wrote some some i didnt either way less than 30% total and i like the look of it
-
+//REMOVED MOST AI CSS AND JS i wrote some some i didnt either way less that 30% total
 const TABS = ["map", "imagery", "reasoning"];
 
 const createCustomIcon = (color) =>
